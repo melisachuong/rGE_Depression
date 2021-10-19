@@ -1,0 +1,3892 @@
+---
+title: 'Indirect Genetic Effects: Depression Analyses'
+author: "Melisa Chuong"
+date: "25/01/2021"
+output: 
+  html_document:
+    code_folding: hide
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+# Explore Indirect Genetic Effects using Regressions and Pathway Analyses
+# Aim 
+I will be using trio's full polygenic risk scores rather than splitting PRSs into transmitted and non-transmitted counterparts.
+
+```{r, eval=FALSE}
+library(lme4)
+library(lavaan)
+library(dplyr)
+```
+
+# GS TRIOS  
+
+Genotyped data and pedigree files can be found on datastore @   /exports/igmm/eddie/GenScotDepression/data/genscot/genetics/genotypes/GS20K_PLINK_files/QCd_data   
+*These files are saved as GS_QC.bed/.bim/.fam*  
+
+I find genotyped GS trios using the pedigree file available, from this we create a GS_trio file.
+
+```{r, eval=FALSE}
+rm(list=ls())
+
+fam <- read.table("GS_QC.fam") #this file was renamed for convenience 
+colnames(fam) <- c("FID", "IID", "PID", "MID", "SEX", "PHENO")
+
+fatherpresent <- fam[fam$PID%in%fam$IID,] #Finding PIDs also present in the IID column - every individual in the IID column in the pedigree file has genotyped data#
+dim(fatherpresent) #fatherduo n= 3,865
+
+motherpresent <- fam[fam$MID%in%fam$IID,] #Finding MIDs also present in the IID column#
+dim(motherpresent) #motherduo n=5,954
+
+trio <- fam[fam$PID%in%fam$IID & fam$MID%in%fam$IID,] #Finding trios, i.e. individuals with both PIDs and MIDs present in the IID column#
+
+write.table(trio, "GS_trio", row.names=F, quote=F)
+#n= 2680 genotyped trios available in Generation Scotland
+```
+
+# PHENOTYPES {.tabset}  
+
+Our main phenotype of interest is depression. I use the General Health Questionnaire, which is used by psychiatrist for diagnoses of non-psychotic and minor psychiatric disorders. The GHQ-28 has been administered to GS participants and explores general psychological distress. The questionnaire is made up of 4 sections exploring anxiety & insomnia, somatic symptoms, social dysfunction and severe depression.  
+I will use the total scores as psychological distress, as well as, focus on the severe depression questions to explore specifically on depression. Important to note that the whole questionnaire is validated, however, the severe depression qs on their own are not.  
+
+This data can be found on datastore @ /exports/igmm/datastore/GenScotDepression/data/genscot/phenotypes/GS_All_GHQ.csv  
+
+## GHQ Total  
+
+Colname is GHQTtotal  
+Hist + variance + sd  
+Range 0:84  
+
+```{r, eval=FALSE}
+ghq <- read.csv("GS_All_GHQ.csv")
+which(colnames(ghq)=="GHQTotal")
+ghqt <- ghq[,c(1,30)]
+hist(ghqt$GHQTotal, col="lightblue") #19,759
+
+colnames(ghqt)[1] <- c("IID")
+ghqt <- ghqt[complete.cases(ghqt),] #n=19,695
+summary(ghqt$GHQTotal)
+var(ghqt$GHQTotal)
+sd(ghqt$GHQTotal)
+
+write.table(ghqt, "GHQ_tot", row.names=F, quote=F)
+
+```
+
+## GHQ Depression  
+
+Colname is GHQDepression  
+Hist + variance + sd  
+Range 0:21
+
+```{r, eval=FALSE}
+which(colnames(ghq)=="GHQDepression")
+ghqd <- ghq[,c(1,34)] 
+hist(ghqd$GHQDepression, col="deepskyblue3") #19,759
+
+colnames(ghqd)[1] <- "IID"
+ghqd <- ghqd[complete.cases(ghqd),] #n=19,682
+summary(ghqd$GHQDepression)
+var(ghqd$GHQDepression)
+sd(ghqd$GHQDepression)
+
+write.table(ghqd, "GHQ_dep", row.names=F, quote=F)
+
+```
+
+## QC Phenotypes  
+
+Removing phenotype values that are greater or less than 4 standard deviations away from the mean (i.e. outliers!) - after controlling for AGE and SEX!  
+Age and sex variable files provided by Carmen Amador.  
+
+GHQ Total has 157 outliers within the whole GS sample removed.  
+
+GHQ Depression has 291 outliers within the whole GS sample removed.  
+
+```{r, eval=FALSE}
+##########
+#ghqtotal#
+##########
+
+age <- read.table("GS_Ages.qcovar", header=T)
+age <- age[,1:3]
+colnames(age) <- c("FID", "IID", "AGE")
+
+sex <- read.table("GS_SexClinic.fcovar", header=T)
+sex <- sex[,1:3]
+colnames(sex) <- c("FID", "IID", "SEX")
+
+cov <- merge(age, sex, by=c("FID", "IID")) #n=20,032
+
+df1 <- merge(ghqt, cov, by="IID") #n=18,264
+
+#We need to remove individuals with NA data
+df1 <- df1[!is.na(df1$GHQTotal),] #n=18,624
+
+#Regressing out the effects of AGE and SEX
+reg <- lm(GHQTotal~AGE+SEX, data=df1)
+res <- data.frame(IID=df1$IID, GHQT_res=residuals(reg))
+
+summary(res$GHQT_res)
+sd(res$GHQT_res)
+
+outlierIDs_positive <- subset(res, res$GHQT_res>mean(res$GHQT_res)+4*sd(res$GHQT_res))
+outlierIDs_negative <- subset(res, res$GHQT_res<mean(res$GHQT_res)-4*sd(res$GHQT_res))
+
+outlierIDs <- rbind(outlierIDs_positive, outlierIDs_negative) #n=157
+
+#We only actually need the identity numbers of the outliers
+outlierIDs <- outlierIDs[,1:2]
+
+write.table(outlierIDs, "ghqtOUTLIERS", row.names=F, quote=F)
+
+#Now removing outliers from our GHQT variable
+clean_ghqt <- ghqt[!(ghqt$IID%in%outlierIDs$IID),] #n=(19,695-157) 19,538
+
+trio <- read.table("GS_trio", header=T)
+df2 <- merge(trio, clean_ghqt, by="IID", all.x=T)
+colnames(clean_ghqt) <- c("MID", "m_ghqt")
+df3 <- merge(df2, clean_ghqt, by="MID", all.x=T)
+colnames(clean_ghqt) <- c("PID", "p_ghqt")
+df4 <- merge(df3, clean_ghqt, by="PID", all.x=T)
+
+ghqt_trio <- df4
+write.table(ghqt_trio, "clean_ghqt", row.names=F, quote=F)
+
+########
+#ghqdep#
+########
+
+df1 <- merge(ghqd, cov, by="IID") #n=18,252
+
+#We need to remove individuals with NA data
+df1 <- df1[!is.na(df1$GHQDepression),] #n=18,252
+
+#Regressing out the effects of AGE and SEX
+reg <- lm(GHQDepression~AGE+SEX, data=df1)
+res <- data.frame(IID=df1$IID, GHQD_res=residuals(reg))
+
+summary(res$GHQD_res)
+sd(res$GHQD_res)
+
+outlierIDs_positive <- subset(res, res$GHQD_res>mean(res$GHQD_res)+4*sd(res$GHQD_res))
+outlierIDs_negative <- subset(res, res$GHQD_res<mean(res$GHQD_res)-4*sd(res$GHQD_res))
+
+outlierIDs <- rbind(outlierIDs_positive, outlierIDs_negative) #n=291
+
+#We only actually need the identity numbers of the outliers
+outlierIDs <- outlierIDs[,1:2]
+
+write.table(outlierIDs, "ghqdOUTLIERS", row.names=F, quote=F)
+
+#Now removing outliers from our GHQD variable
+clean_ghqd <- ghqd[!(ghqd$IID%in%outlierIDs$IID),] #n=(19,682-291) 19,391
+
+trio <- read.table("GS_trio", header=T)
+df2 <- merge(trio, clean_ghqd, by="IID", all.x=T)
+colnames(clean_ghqd) <- c("MID", "m_ghqd")
+df3 <- merge(df2, clean_ghqd, by="MID", all.x=T)
+colnames(clean_ghqd) <- c("PID", "p_ghqd")
+df4 <- merge(df3, clean_ghqd, by="PID", all.x=T)
+
+ghqd_trio <- df4
+write.table(ghqd_trio, "clean_ghqd", row.names=F, quote=F)
+
+```
+
+## Phenotype Demographics
+
+*GHQ Total Demographics*
+Histogram + variance + sd (offspring)
+```{r, eval=FALSE}
+#offspring GHQT demographics
+
+ghqt_trio <- read.table("clean_ghqt", header=T)
+ghqt_trio <- ghqt_trio[complete.cases(ghqt_trio),] #Using trios with COMPLETE data; n=2,315
+hist(ghqt_trio$GHQTotal, col="cadetblue3")
+
+summary(ghqt_trio$GHQTotal)
+var(ghqt_trio$GHQTotal)
+sd(ghqt_trio$GHQTotal)
+```
+
+Histogram + variance + sd (maternal)
+```{r, eval=FALSE}
+#maternal ghqt demographics
+
+hist(ghqt_trio$m_ghqt, col="lightpink1")
+
+summary(ghqt_trio$m_ghqt)
+var(ghqt_trio$m_ghqt)
+sd(ghqt_trio$m_ghqt)
+```
+
+Histogram + variance + sd (paternal)
+```{r, eval=FALSE}
+#paternal ghqt demographics
+
+hist(ghqt_trio$p_ghqt, col="darkolivegreen3")
+
+summary(ghqt_trio$p_ghqt)
+var(ghqt_trio$p_ghqt)
+sd(ghqt_trio$p_ghqt)
+
+```
+
+*GHQ Depression Demographics*  
+Histogram + variance + sd (offspring)
+```{r, eval=FALSE}
+#offspring GHQD demographics
+ghqd_trio <- read.table("clean_ghqd", header=T)
+ghqd_trio <- ghqd_trio[complete.cases(ghqd_trio),] #Using trios with COMPLETE data; n=2,315
+hist(ghqd_trio$GHQDepression, col="cadetblue3")
+
+summary(ghqd_trio$GHQDepression)
+var(ghqd_trio$GHQDepression)
+sd(ghqd_trio$GHQDepression)
+```
+
+Histogram + variance + sd (maternal)
+```{r, eval=FALSE}
+#maternal ghqd demographics
+
+hist(ghqd_trio$m_ghqd, col="lightpink1")
+
+summary(ghqd_trio$m_ghqd)
+var(ghqd_trio$m_ghqd)
+sd(ghqd_trio$m_ghqd)
+```
+
+Histogram + variance + sd (paternal)
+```{r, eval=FALSE}
+#paternal ghqd demographics
+
+hist(ghqd_trio$p_ghqd, col="darkolivegreen3")
+
+summary(ghqd_trio$p_ghqd)
+var(ghqd_trio$p_ghqd)
+sd(ghqd_trio$p_ghqd)
+
+```
+
+# POLYGENIC RISK SCORES {.tabset}  
+
+We will use PRSice2 (Choi & O'Reilly., 2019) to generate the PRSs. We will pre-correct our phenotypes for covariates. We will use 1000G as a reference panel for LD estimation which will go onto guide pruning and clumping of SNPs. 
+
+## Covariate Correction  
+
+Covariates include the first 20 principle components from a Genomics Relatedness Matrix of GS data, age and sex.   
+
+PCs can be found on datastore @ /exports/igmm/datastore/GenScotDepression/data/genscot/genetics/genotypes/GS20K_PLINK_files/PCA_MDS_components/HM3mds.mds  
+
+Age and sex covariate data is provided by Carmen Amador @  /gpfs/igmmfs01/eddie/haley-lab/melisa/dataformelisa/GS_SexClinic.fcovar / GS_Ages.qcovar  
+
+```{r, eval=FALSE}
+library(dplyr)
+
+age <- read.table("GS_Ages.qcovar", header=T)
+head(age)
+age <- age[,c(1:3)]
+colnames(age) <- c("FID", "IID", "AGE")
+dim(age)
+
+sex <- read.table("GS_SexClinic.fcovar", header=T)
+head(sex)
+sex <- sex[,c(1:3)]
+colnames(sex) <- c("FID", "IID", "SEX")
+sex$SEX <- as.factor(sex$SEX)
+dim(sex)
+
+pcs <- read.table("HM3mds.mds", header=T)
+pcs <- distinct(pcs, IID, .keep_all = TRUE) #Some IIDs are repeated, so need to sort this out#
+head(pcs)
+pcs <- pcs[,-c(1,3)]
+dim(pcs)
+
+cov <- merge(age, sex, by=c("FID","IID"))
+cov <- merge(cov, pcs, by="IID")
+dim(cov)
+
+df1 <- merge(ghqt, cov, by="IID")
+dim(df1)
+
+res <- lm(GHQTotal~C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20+AGE+SEX, data=df1)
+summary(res)
+result <- data.frame(FID=df1$FID, IID=df1$IID, GHQT_res=residuals(res))
+write.table(result, "GHQ_tot_res", row.names=F, quote=F)
+
+df2 <- merge(ghqd, cov, by="IID")
+dim(df2)
+res2 <- lm(GHQDepression~C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20+AGE+SEX, data=df2)
+summary(res2)
+result2 <- data.frame(FID=df2$FID, IID=df2$IID, GHQD_res=residuals(res2))
+write.table(result2, "GHQ_dep_res", row.names=F, quote=F)
+
+GSdeppheno <- merge(result, result2, by=c("FID", "IID"), all.x=T, all.y=T)
+write.table(GSdeppheno, "GSdeppheno", row.names=F, quote=F)
+```
+
+1000G files need to be in the format of plink1 files. Plink2 versions are available on datastore @ /exports/igmm/datastore/GenScotDepression/data/resources/1000g/PGEN
+
+Need to convert vzs plink2 versions of files to .bed\.bim\.fam plink1 versions
+plink2.00 is used for this 
+
+```
+plink --pfile all_phase3 --max-allele 2 --make-bed --out all_phase3
+
+```
+## Computing PGSs 
+
+We will use:
+
+Base data: Depression GWAS sumstats ~ Howard et al., 2019, 29 PGC cohorts and 23&Me data only (Sample size = 807,553, ncase=246,363, ncontrol=561,190)  
+
+LD data: 1000G LD structure (see above)  
+
+Phenotype data: The GSdeppheno file we created above. This is psychological distress and depression for all GS participants with the effects of age, sex and 20PCs removed  
+
+Target data: Will be the available plink files for GS; GS_QC.bed, GS_QC.bim, GS_QC.fam  
+
+We will be creating different PRSs whereby the number of SNPs used to inform the PRSs will be dependent on the SNPs p-value GWAS association with the trait. We use 10 different p-value association thresholds ranging from 5x10-8 : 1.
+
+Shell script
+
+```
+#!/bin/sh
+###########################################
+
+# M.Chuong, Edinburgh U.K, January2020
+# Eddie Depression PRSice GS Script
+
+#$ -N GenScotDepPRS
+#$ -cwd
+#$ -pe sharedmem 2 # number of cores
+#$ -l h_vmem=8G # memory per core
+#$ -l h_rt=12:00:00 ## requested time
+#$ -m baes ## notifications: (b)begin/(a)aborted/(e)end/(s)suspended/(n)nomail
+#$ -M melisa.chuong@ed.ac.uk ## email for notifications
+
+# INITIALISE ENV MODULES
+. /etc/profile.d/modules.sh # if using modules need to add this line
+# LOAD THE MODULES
+module load igmm/apps/R/3.3.3
+
+
+Rscript PRSice.R\ 
+--dir .\ 
+--prsice ./PRSice_linux\
+--base 23am_PGC_UKB_noGS2\ 
+--target GS_QC\ 
+--thread 1\ 
+--print-snp\ 
+--beta\ 
+--stat Effect\ 
+--binary-target F,F\ 
+--snp MarkerName\ 
+--A1 Allele1\ 
+--A2 Allele2\ 
+--se StdErr\ 
+--pvalue P-value\ 
+--bar-levels 0.00000005,0.0000005,0.000005,0.00005,0.0005,0.005,0.05,0.5,0.75,1\ 
+--fastscore\ 
+--all-score\ 
+--ld all_phase3\ 
+--pheno-file GSdeppheno\ 
+--pheno-col GHQT_res,GHQD_res\ 
+--out GSdep
+
+```
+Summary of generated PRSs  
+Currently, PRSs informed by SNPs exceeding the genome-wide p-value threshold of 0.5 accounts for the greatest amount of variance in comparison to the other PRSs.  
+
+Important to note that the depression PRS only accounts for (max) 1.3% of the variance in GHQ Depression and (max) 1.89% of the variance in GHQ Total. PRSs informed using SNPs with association p values <0.5 account for the greatest variance.  
+We will use the PRSs informed using SNPs with association p values <0.05.  
+Presented is a histogram of the standardised PRSs.
+
+```{r, eval=FALSE}
+
+prs <- read.table("GSdep.all.score", header=T)
+prs <- prs[,c(1:2,9)]
+colnames(prs)[3] <- c("depPRS_0.05")
+
+prs$depPRS_0.05 <- scale(prs$depPRS_0.05) #POLYGENIC RISK SCORES ARE STANDARDISED!
+hist(prs$depPRS_0.05, col="orange") #pretty much normal
+```
+
+Depression PRS - GHQ Depression summary
+```{r, eval=FALSE}
+
+ghqd_prs <- read.table("GSdep.GHQD_res.prsice")
+ghqd_prs
+
+```
+
+Depression PRS - GHQ Total summary
+```{r, eval=FALSE}
+ghqt_prs <- read.table("GSdep.GHQT_res.prsice")
+ghqt_prs
+
+#PRSs informed using SNPs with genome-wide association p-values <0.5 accounts for the greatest variance in our phenotypes
+```
+
+# SANITY CHECKS {.tabset}  
+
+## Sanity Check Dataframe  
+
+**Create dataframe**  
+Resulting DF has ALL variables standardised!
+```{r, eval=FALSE}
+
+ghqtout <- read.table("ghqtOUTLIERS", header=T)
+ghqt <- ghqt[!(ghqt$IID%in%ghqtout$IID),]
+
+ghqdout <- read.table("ghqdOUTLIERS", header=T)
+ghqd <- ghqd[!(ghqd$IID%in%ghqdout$IID),]
+
+df <- trio[,c(1:4)]
+
+GSdep <- merge(ghqd, ghqt, by="IID", all.x=T, all.y=T)
+
+GSdep[,2:3] <- scale(GSdep[,2:3]) #standardising the GHQ variables
+df1 <- merge(df, GSdep, by="IID", all.x=T)
+
+colnames(GSdep) <- c("MID", "mGHQD", "mGHQT")
+df2 <- merge(df1, GSdep, by="MID", all.x=T)
+
+colnames(GSdep) <- c("PID", "pGHQD", "pGHQT")
+df3 <- merge(df2, GSdep, by="PID", all.x=T)
+
+df4 <- merge(df3, prs, by=c("FID", "IID")) #prs already standardised, see above
+
+colnames(prs)[2:3] <- c("MID","mdepPRS_0.05")
+df5 <- merge(df4, prs, by=c("FID", "MID"))
+
+colnames(prs)[2:3] <- c("PID","pdepPRS_0.05")
+df6 <- merge(df5, prs, by=c("FID", "PID"))
+
+age <- read.table("GS_Ages.qcovar", header=T)
+age <- age[,c(1:3)]
+age$age <- scale(age$age)
+
+colnames(age) <- c("FID", "MID", "mAGE")
+df7 <- merge(df6, age, by=c("FID", "MID"))
+colnames(age) <- c("FID", "PID", "pAGE")
+df8 <- merge(df7, age, by=c("FID", "PID"))
+
+colnames(age)[2:3] <- c("IID", "AGE")
+sex <- read.table("GS_SexClinic.fcovar", header=T)
+head(sex)
+sex <- sex[,c(1:3)]
+colnames(sex) <- c("FID", "IID", "SEX")
+sex$SEX <- as.factor(sex$SEX)
+dim(sex)
+
+pcs <- read.table("HM3mds.mds", header=T)
+pcs <- distinct(pcs, IID, .keep_all = TRUE) #Some IIDs are repeated, so need to sort this out#
+head(pcs)
+pcs <- pcs[,-3]
+pcs[,3:22] <- scale(pcs[,3:22])
+
+cov <- merge(age, sex, by=c("FID","IID"))
+cov <- merge(cov, pcs, by=c("FID", "IID"))
+
+write.table(cov, "GScov_scaled", row.names=F, quote=F)
+
+df9 <- merge(df8, cov, by=c("FID", "IID"))
+names(df9)
+
+write.table(df9, "IGE_dep_PRS_df", row.names=F, quote=F)
+
+check1 <- df9[,c(1:5, 7,9)]
+check1 <- check1[complete.cases(check1),]
+#N=2280 trios with full GHQ Depression data available
+
+check2 <- df9[,c(1:4,6,8,10)]
+check2 <- check2[complete.cases(check2),]
+#N=2315 trios with full GHQ Total data availale
+
+```
+
+## Covariates; Model or Pre-correct?  
+
+To check whether I should use pre-corrected dep phenotypes or alternatively model the covariates, I run regression analyses 
+
+$$ GHQ Total \sim depPRS + COV $$ vs $$ GHQ Total (residualised) \sim depPRS $$  
+$$ GHQ Depression \sim depPRS + COV $$ vs $$ GHQ Depression (residualised) \sim depPRS $$  
+
+Results below show difference to be quite minimal, as many regression models will be implemented I will use the precorrected DV method to make results easier to read.  
+
+```{r, eval=FALSE}
+
+prs <- read.table("GSdep.all.score", header=T)
+prs[,3:12] <- scale(prs[,3:12])
+
+colnames(GSdep) <- c("IID", "GHQD", "GHQT")
+
+df <- merge(GSdep, prs, by="IID", all.x=T)
+df2 <- merge(df, cov, by=c("FID", "IID"), all.x=T) #remember all covariates are standardised, n=19,577
+
+
+#pre-correct GHQT
+
+ghqtdf <- df2[,-3]
+ghqtdf <- ghqtdf[complete.cases(ghqtdf),] #n=18,068
+
+reg <- lm(GHQT~C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20+AGE+SEX, data=ghqtdf)
+ghqt_res <- data.frame(FID=ghqtdf$FID, IID=ghqtdf$IID, GHQT_res=residuals(reg))
+
+df3 <- merge(df2, ghqt_res, by=c("FID", "IID"), all.x=T)
+
+#pre-correct GHQD
+
+ghqddf <- df2[,-4]
+ghqddf <- ghqddf[complete.cases(ghqddf),] #n=17,992
+
+reg <- lm(GHQD~C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20+AGE+SEX, data=ghqddf)
+ghqd_res <- data.frame(FID=ghqddf$FID, IID=ghqddf$IID, GHQD_res=residuals(reg))
+
+df4 <- merge(df3, ghqd_res, by=c("FID", "IID"), all.x=T)
+
+```
+
+GHQT + COV vs GHQT(residualised)
+```{r, eval=FALSE}
+#Check to see if I get similar results with covariates modelled vs pre-corrected variables
+
+test1 <- lm(GHQT~X0.05+C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20+AGE+SEX, data=df3)
+summary(test1)
+
+test1.2 <- lm(GHQT_res~X0.05, data=df3)
+summary(test1.2)
+```
+
+GHQD + COV vs GHQD(residualised)
+```{r, eval=FALSE}
+#Check to see if I get similar results with covariates modelled vs pre-corrected variables
+
+test2 <- lm(GHQD~X0.05+C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20+AGE+SEX, data=df4)
+summary(test2)
+
+test2.2 <- lm(GHQD_res~X0.05, data=df4)
+summary(test2.2)
+```
+
+## Trio PGSs Predict Trio Phenotypes?  
+
+GHQ Depression results 
+
+```{r, eval=FALSE}
+trio <- read.table("GS_trio", header=T)
+ofid <- trio[,1:2]
+mid <- trio[,c(1,4)]
+colnames(mid)[2] <- "IID"
+pid <- trio[,c(1,3)]
+colnames(pid)[2] <- "IID"
+
+df5 <- merge(ofid, df4, by=c("FID", "IID"), all.x=T)
+df6 <- merge(mid, df4, by=c("FID", "IID"), all.x=T)
+df7 <- merge(pid, df4, by=c("FID", "IID"), all.x=T)
+
+#Whole sample n= 17,920
+
+a <- c()
+for(threshold in 5:14){
+  regression <- summary(lm(df4$GHQD_res~df4[,threshold]), data=df4)
+  reginfo <- cbind(names(df4[threshold]), coefficients(regression), regression$adj.r.squared)
+  a <- as.data.frame(rbind(a, reginfo))
+}
+colnames(a) <- c("Threshold", "Estimate", "StdErr", "t", "p", "AdjR2")
+a <- a[seq(2,20,by=2),] #Not including intercepts
+write.csv(a, "depPRS_GHQD_associations_results_whole.csv", row.names=F, quote=F)
+
+#Offspring sample n= 2,411 
+
+a <- c()
+for(threshold in 5:14){
+  regression <- summary(lm(df5$GHQD_res~df5[,threshold]), data=df5)
+  reginfo <- cbind(names(df5[threshold]), coefficients(regression), regression$adj.r.squared)
+  a <- as.data.frame(rbind(a, reginfo))
+}
+colnames(a) <- c("Threshold", "Estimate", "StdErr", "t", "p", "AdjR2")
+a <- a[seq(2,20,by=2),] #Not including intercepts
+write.csv(a, "depPRS_GHQD_associations_results_offspring.csv", row.names=F, quote=F)
+
+#maternal n= 2,406
+
+a <- c()
+for(threshold in 5:14){
+  regression <- summary(lm(df6$GHQD_res~df6[,threshold]), data=df6)
+  reginfo <- cbind(names(df6[threshold]), coefficients(regression), regression$adj.r.squared)
+  a <- as.data.frame(rbind(a, reginfo))
+}
+colnames(a) <- c("Threshold", "Estimate", "StdErr", "t", "p", "AdjR2")
+a <- a[seq(2,20,by=2),] #Not including intercepts
+write.csv(a, "depPRS_GHQD_associations_results_maternal.csv", row.names=F, quote=F)
+
+#paternal n= 2,433
+
+a <- c()
+for(threshold in 5:14){
+  regression <- summary(lm(df7$GHQD_res~df7[,threshold]), data=df7)
+  reginfo <- cbind(names(df7[threshold]), coefficients(regression), regression$adj.r.squared)
+  a <- as.data.frame(rbind(a, reginfo))
+}
+colnames(a) <- c("Threshold", "Estimate", "StdErr", "t", "p", "AdjR2")
+a <- a[seq(2,20,by=2),] #Not including intercepts
+write.csv(a, "depPRS_GHQD_associations_results_paternal.csv", row.names=F, quote=F)
+
+```
+
+![.](./DepressionResults/Slide2.PNG)
+
+GHQ Total results 
+
+```{r, eval=FALSE}
+trio <- read.table("GS_trio", header=T)
+ofid <- trio[,1:2]
+mid <- trio[,c(1,4)]
+colnames(mid)[2] <- "IID"
+pid <- trio[,c(1,3)]
+colnames(pid)[2] <- "IID"
+
+df5 <- merge(ofid, df4, by=c("FID", "IID"), all.x=T)
+df6 <- merge(mid, df4, by=c("FID", "IID"), all.x=T)
+df7 <- merge(pid, df4, by=c("FID", "IID"), all.x=T)
+
+#Whole sample n= 18,066
+
+a <- c()
+for(threshold in 5:14){
+  regression <- summary(lm(df4$GHQT_res~df4[,threshold]), data=df4)
+  reginfo <- cbind(names(df4[threshold]), coefficients(regression), regression$adj.r.squared)
+  a <- as.data.frame(rbind(a, reginfo))
+}
+colnames(a) <- c("Threshold", "Estimate", "StdErr", "t", "p", "AdjR2")
+a <- a[seq(2,20,by=2),] #Not including intercepts
+write.csv(a, "depPRS_GHQT_associations_results_whole.csv", row.names=F, quote=F)
+
+#Offspring sample n= 2,432
+
+a <- c()
+for(threshold in 5:14){
+  regression <- summary(lm(df5$GHQT_res~df5[,threshold]), data=df5)
+  reginfo <- cbind(names(df5[threshold]), coefficients(regression), regression$adj.r.squared)
+  a <- as.data.frame(rbind(a, reginfo))
+}
+colnames(a) <- c("Threshold", "Estimate", "StdErr", "t", "p", "AdjR2")
+a <- a[seq(2,20,by=2),] #Not including intercepts
+write.csv(a, "depPRS_GHQT_associations_results_offspring.csv", row.names=F, quote=F)
+
+
+#maternal n= 2,418
+
+a <- c()
+for(threshold in 5:14){
+  regression <- summary(lm(df6$GHQT_res~df6[,threshold]), data=df6)
+  reginfo <- cbind(names(df6[threshold]), coefficients(regression), regression$adj.r.squared)
+  a <- as.data.frame(rbind(a, reginfo))
+}
+colnames(a) <- c("Threshold", "Estimate", "StdErr", "t", "p", "AdjR2")
+a <- a[seq(2,20,by=2),] #Not including intercepts
+write.csv(a, "depPRS_GHQT_associations_results_maternal.csv", row.names=F, quote=F)
+
+#paternal n= 2,441
+
+a <- c()
+for(threshold in 5:14){
+  regression <- summary(lm(df7$GHQT_res~df7[,threshold]), data=df7)
+  reginfo <- cbind(names(df7[threshold]), coefficients(regression), regression$adj.r.squared)
+  a <- as.data.frame(rbind(a, reginfo))
+}
+colnames(a) <- c("Threshold", "Estimate", "StdErr", "t", "p", "AdjR2")
+a <- a[seq(2,20,by=2),] #Not including intercepts
+write.csv(a, "depPRS_GHQT_associations_results_paternal.csv", row.names=F, quote=F)
+
+```
+
+![.](./DepressionResults/Slide3.PNG)
+
+## Trio PGS Correlations   
+
+I am exploring PRSs generated using SNPs exceeding the p-value threshold of p<0.05  
+Remember all variables are standardised - should interpret accordingly
+
+```{r, eval=FALSE}
+df <- read.table("IGE_dep_PRS_df", header=T)
+
+cor.test(df$depPRS_0.05, df$mdepPRS_0.05)
+cor.test(df$depPRS_0.05, df$pdepPRS_0.05)
+cor.test(df$mdepPRS_0.05, df$pdepPRS_0.05)
+
+cor.test(df$GHQTotal, df$mGHQT)
+cor.test(df$GHQTotal, df$pGHQT)
+cor.test(df$mGHQT, df$pGHQT)
+
+cor.test(df$GHQDepression, df$mGHQD)
+cor.test(df$GHQDepression, df$pGHQD)
+cor.test(df$mGHQD, df$pGHQD)
+
+df <- merge(df, ghqt_res, by=c("FID", "IID"),all.x=T)
+df <- merge(df, ghqd_res, by=c("FID", "IID"),all.x=T)
+
+summary(lm(GHQTotal~depPRS_0.05, data=df))
+summary(lm(GHQT_res~depPRS_0.05, data=df))
+summary(lm(mGHQT~mdepPRS_0.05, data=df))
+summary(lm(pGHQT~pdepPRS_0.05, data=df))
+
+summary(lm(GHQDepression~depPRS_0.05, data=df))
+summary(lm(GHQD_res~depPRS_0.05, data=df))
+summary(lm(mGHQD~mdepPRS_0.05, data=df))
+summary(lm(pGHQD~pdepPRS_0.05, data=df))
+
+
+```
+
+![.](./DepressionResults/Slide4.PNG)
+
+# DATAFRAMES {.tabset}  
+
+I will create separate dataframes for regression analyses and pathway analyses  
+Resulting dataframes has all variables and covariates standardised  
+
+## Regression Dataframe  
+
+```{r, eval=FALSE}
+rm(list=ls())
+
+library(dplyr)
+
+#will not standardise parental dep until properly residualised
+
+######
+#GHQT#
+######
+
+ghqt <- read.table("GHQ_tot", header=T)
+outliers <- read.table("ghqtOUTLIERS", header=T)
+ghqt <- ghqt[!(ghqt$IID%in%outliers$IID),]
+
+colnames(ghqt) <- c("MID", "mGHQT")
+
+age <- read.table("GS_Ages.qcovar", header=T)
+age <- age[,c(1:3)]
+colnames(age) <- c("FID", "MID", "mAGE")
+
+pcs <- read.table("HM3mds.mds", header=T)
+pcs <- distinct(pcs, IID, .keep_all = TRUE) #Some IIDs are repeated, so need to sort this out#
+pcs <- pcs[,-c(1,3)]
+colnames(pcs)[1] <- "MID"
+
+df <- merge(ghqt, age, by="MID")
+df2 <- merge(df, pcs, by="MID")
+df2 <- df2[complete.cases(df2),] # n=18,069
+
+#pre-correct maternal height for age and 20 PCs 
+res <- lm(mGHQT~C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20+mAGE, data=df2)
+result <- data.frame(FID=df2$FID, MID=df2$MID, mGHQT_res=residuals(res))
+result[,3] <- scale(result[,3]) #standardise this precorrected variable
+
+colnames(ghqt) <- c("PID", "pGHQT")
+colnames(age) <- c("FID", "PID", "pAGE")
+colnames(pcs)[1] <- "PID"
+
+df3 <- merge(ghqt, age, by="PID")
+df4 <- merge(df3, pcs, by="PID")
+df4 <- df4[complete.cases(df4),] # n=18,069
+
+res2 <- lm(pGHQT~C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20+pAGE, data=df4)
+result2 <- data.frame(FID=df4$FID, PID=df4$PID, pGHQT_res=residuals(res2))
+result2[,3] <- scale(result2[,3])
+
+
+######
+#GHQD#
+######
+
+ghqd <- read.table("GHQ_dep", header=T)
+outliers <- read.table("ghqdOUTLIERS", header=T)
+ghqd <- ghqd[!(ghqd$IID%in%outliers$IID),]
+
+colnames(ghqd) <- c("MID", "mGHQD")
+colnames(age) <- c("FID", "MID", "mAGE")
+colnames(pcs)[1] <- "MID"
+
+df5 <- merge(ghqd, age, by="MID")
+df6 <- merge(df5, pcs, by="MID")
+df6 <- df6[complete.cases(df6),] # n=17,923
+
+res3 <- lm(mGHQD~C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20+mAGE, data=df6)
+result3 <- data.frame(FID=df6$FID, MID=df6$MID, mGHQD_res=residuals(res3))
+result3[,3] <- scale(result3[,3])
+
+colnames(ghqd) <- c("PID", "pGHQD")
+colnames(age) <- c("FID", "PID", "pAGE")
+colnames(pcs)[1] <- "PID"
+
+df8 <- merge(ghqd, age, by="PID")
+df9 <- merge(df8, pcs, by="PID")
+df9 <- df9[complete.cases(df9),]
+
+res4 <- lm(pGHQD~C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20+pAGE, data=df9)
+result4 <- data.frame(FID=df9$FID, PID=df9$PID, pGHQD_res=residuals(res3))
+result4[,3] <- scale(result4[,3])
+
+regdf <- read.table("IGE_dep_PRS_df", header=T) #this df already has all variables standardised, so makes sense to add standardised pre-corrected parental dep variables
+
+regdf <- merge(regdf, result, by=c("FID", "MID"), all.x=T)
+regdf <- merge(regdf, result2, by=c("FID", "PID"), all.x=T)
+regdf <- merge(regdf, result3, by=c("FID", "MID"), all.x=T)
+regdf <- merge(regdf, result4, by=c("FID", "PID"), all.x=T)
+names(regdf)
+
+regdf$NFID <- paste(regdf$PID, regdf$MID, sep="_")
+
+write.table(regdf, "IGE_dep_regression_df", row.names=F, quote=F)
+
+#full GHQT data
+check1 <- regdf[,-c(5,7,9, 40, 41)]
+check1 <- check1[complete.cases(check1),] # n= 2315
+
+#full GHQD data
+check2 <- regdf[,-c(6,8,10, 38, 39)]
+check2 <- check2[complete.cases(check2),] # n= 2280
+
+```
+
+## Pathway Model Dataframe  
+Parent phenotypes are pre-corrected for PCs only - we can model AGE in the pathway models, in fact, results might be quite informative
+
+```{r, eval=FALSE}
+
+rm(list=ls())
+
+library(dplyr)
+
+prs <- read.table("GSdep.all.score", header=T)
+head(prs)
+prs <- prs[,c(1:2,9)]
+colnames(prs)[3] <- c("depPRS_0.05")
+dim(prs)
+prs$depPRS_0.05 <- scale(prs$depPRS_0.05)
+
+trio <- read.table("GS_trio", header=T)
+df <- trio[,c(1:4)]
+
+ghqt <- read.table("GHQ_tot", header=T)
+outliers <- read.table("ghqtOUTLIERS", header=T)
+ghqt <- ghqt[!(ghqt$IID%in%outliers$IID),]
+
+ghqd <- read.table("GHQ_dep", header=T)
+outliers <- read.table("ghqdOUTLIERS", header=T)
+ghqd <- ghqd[!(ghqd$IID%in%outliers$IID),]
+
+sex <- read.table("GS_SexClinic.fcovar", header=T)
+head(sex)
+sex <- sex[,c(1:3)]
+colnames(sex) <- c("FID", "IID", "SEX")
+sex$SEX <- as.factor(sex$SEX)
+dim(sex)
+
+age <- read.table("GS_Ages.qcovar", header=T)
+age <- age[,1:3]
+age$AGE <- scale(age$age)
+age <- age[,-3]
+colnames(age) <- c("FID", "IID", "AGE")
+
+pcs <- read.table("HM3mds.mds", header=T)
+pcs <- distinct(pcs, IID, .keep_all = TRUE) #Some IIDs are repeated, so need to sort this out#
+head(pcs)
+pcs <- pcs[,-3]
+dim(pcs) 
+
+##################################
+##Precorrect parental phenotypes##
+##################################
+
+######
+#GHQT#
+######
+
+# maternal GHQT #
+
+colnames(ghqt) <- c("MID", "mGHQT")
+colnames(pcs)[1:2] <- c("FID","MID")
+
+dfm <- merge(ghqt, pcs, by="MID")
+dfm <- dfm[complete.cases(dfm),]
+
+res <- lm(mGHQT~C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20, data=dfm)
+summary(res)
+result <- data.frame(FID=dfm$FID, MID=dfm$MID, mGHQT_res=residuals(res))
+result[,3] <- scale(result[,3])
+
+# paternal GHQT #
+
+colnames(ghqt) <- c("PID", "pGHQT")
+colnames(pcs)[1:2] <- c("FID","PID")
+
+dfp <- merge(ghqt, pcs, by="PID")
+dfp <- dfp[complete.cases(dfp),]
+
+res2 <- lm(pGHQT~C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20, data=dfp)
+summary(res2)
+result2 <- data.frame(FID=dfp$FID, PID=dfp$PID, pGHQT_res=residuals(res2))
+result2[,3] <- scale(result2[,3])
+
+######
+#GHQD#
+######
+
+# maternal GHQD #
+
+colnames(ghqd) <- c("MID", "mGHQD")
+colnames(pcs)[1:2] <- c("FID","MID")
+
+dfm <- merge(ghqd, pcs, by="MID")
+dfm <- dfm[complete.cases(dfm),]
+
+res3 <- lm(mGHQD~C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20, data=dfm)
+summary(res3)
+result3 <- data.frame(FID=dfm$FID, MID=dfm$MID, mGHQD_res=residuals(res3))
+result3[,3] <- scale(result3[,3])
+
+# paternal GHQD #
+
+colnames(ghqd) <- c("PID", "pGHQD")
+colnames(pcs)[1:2] <- c("FID","PID")
+
+dfp <- merge(ghqd, pcs, by="PID")
+dfp <- dfp[complete.cases(dfp),]
+
+res4 <- lm(pGHQD~C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20, data=dfp)
+summary(res4)
+result4 <- data.frame(FID=dfp$FID, PID=dfp$PID, pGHQD_res=residuals(res4))
+result4[,3] <- scale(result4[,3])
+
+pathdf <- read.table("IGE_dep_PRS_df", header=T) #this df already has all variables standardised, so makes sense to add standardised pre-corrected parental dep variables
+
+pathdf <- merge(pathdf, result, by=c("FID", "MID"), all.x=T)
+pathdf <- merge(pathdf, result2, by=c("FID", "PID"), all.x=T)
+pathdf <- merge(pathdf, result3, by=c("FID", "MID"), all.x=T)
+pathdf <- merge(pathdf, result4, by=c("FID", "PID"), all.x=T)
+
+names(pathdf)
+pathdf$NFID <- paste(pathdf$PID, pathdf$MID, sep="_")
+
+write.table(pathdf, "IGE_dep_pathway_df", row.names=F, quote=F)
+
+#full GHQT data
+check1 <- pathdf[,-c(5,7,9, 40, 41)]
+check1 <- check1[complete.cases(check1),] # n= 2315
+
+#full GHQD data
+check2 <- pathdf[,-c(6,8,10, 38, 39)]
+check2 <- check2[complete.cases(check2),] # n= 2280
+
+```
+
+## Pathway Model Dataframe (Maternal Duos Only)
+
+```{r, eval=FALSE}
+
+rm(list=ls())
+library(dplyr)
+
+prs <- read.table("GSdep.all.score", header=T)
+head(prs)
+prs <- prs[,c(1:2,9)]
+colnames(prs)[3] <- c("depPRS_0.05")
+dim(prs)
+prs$depPRS_0.05 <- scale(prs$depPRS_0.05)
+
+duo <- read.table("GS_mat_duo", header=T)
+df <- duo[,c(1:4)]
+
+ghqt <- read.table("GHQ_tot", header=T)
+outliers <- read.table("ghqtOUTLIERS", header=T)
+ghqt <- ghqt[!(ghqt$IID%in%outliers$IID),]
+
+ghqd <- read.table("GHQ_dep", header=T)
+outliers <- read.table("ghqdOUTLIERS", header=T)
+ghqd <- ghqd[!(ghqd$IID%in%outliers$IID),]
+
+sex <- read.table("GS_SexClinic.fcovar", header=T)
+head(sex)
+sex <- sex[,c(1:3)]
+colnames(sex) <- c("FID", "IID", "SEX")
+sex$SEX <- as.factor(sex$SEX)
+dim(sex)
+
+age <- read.table("GS_Ages.qcovar", header=T)
+age <- age[,1:3]
+age$AGE <- scale(age$age)
+age <- age[,-3]
+colnames(age) <- c("FID", "IID", "AGE")
+
+pcs <- read.table("HM3mds.mds", header=T)
+pcs <- distinct(pcs, IID, .keep_all = TRUE) #Some IIDs are repeated, so need to sort this out#
+head(pcs)
+pcs <- pcs[,-3]
+dim(pcs) 
+
+##################################
+##Precorrect parental phenotypes##
+##################################
+
+######
+#GHQT#
+######
+
+# maternal GHQT #
+
+colnames(ghqt) <- c("MID", "mGHQT")
+colnames(pcs)[1:2] <- c("FID","MID")
+
+dfm <- merge(ghqt, pcs, by="MID")
+dfm <- dfm[complete.cases(dfm),]
+
+res <- lm(mGHQT~C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20, data=dfm)
+summary(res)
+result <- data.frame(FID=dfm$FID, MID=dfm$MID, mGHQT_res=residuals(res))
+result[,3] <- scale(result[,3])
+
+
+######
+#GHQD#
+######
+
+# maternal GHQD #
+
+colnames(ghqd) <- c("MID", "mGHQD")
+colnames(pcs)[1:2] <- c("FID","MID")
+
+dfm <- merge(ghqd, pcs, by="MID")
+dfm <- dfm[complete.cases(dfm),]
+
+res3 <- lm(mGHQD~C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20, data=dfm)
+summary(res3)
+result3 <- data.frame(FID=dfm$FID, MID=dfm$MID, mGHQD_res=residuals(res3))
+result3[,3] <- scale(result3[,3])
+
+###
+
+colnames(pcs)[1:2] <- c("FID", "IID")
+pcs[3:22] <- scale(pcs[3:22])
+
+colnames(ghqt) <- c("IID", "GHQT")
+ghqt$GHQT <- scale(ghqt$GHQT)
+
+colnames(ghqd) <- c("IID", "GHQD")
+ghqd$GHQD <- scale(ghqd$GHQD)
+
+dep <- merge(ghqt, ghqd, by="IID", all.x=T, all.y=T)
+
+df1 <- merge(df, dep, by= "IID", all.x=T)
+
+colnames(ghqt) <- c("MID", "mGHQT")
+df2 <- merge(df1, ghqt, by="MID", all.x=T)
+
+colnames(ghqd) <- c("MID", "mGHQD")
+df3 <- merge(df2, ghqd, by="MID", all.x=T)
+
+df4 <- merge(df3, sex, by=c("FID", "IID"), all.x=T)
+
+df5 <- merge(df4, age, by=c("FID", "IID"))
+
+colnames(age)[2:3] <- c("MID", "mAGE")
+df6 <- merge(df5, age, by=c("FID", "MID"))
+
+df7 <- merge(df6 , pcs, by=c("FID", "IID"))
+
+df8 <- merge(df7, result, by=c("FID", "MID"), all.x=T)
+
+df9 <- merge(df8, result3, by=c("FID", "MID"), all.x=T)
+
+colnames(prs)[2:3] <- c("IID", "depPRS_0.05")
+df10 <- merge(df9, prs, by=c("FID", "IID"), all.x=T)
+
+colnames(prs)[2:3] <- c("MID", "mdepPRS_0.05")
+df11 <- merge(df10, prs, by=c("FID", "MID"), all.x=T)
+
+df11$NFID <- paste(df11$PID, df11$MID, sep="_")
+names(df11)
+
+write.table(df11, "IGE_dep_pathway_df_matduo", row.names=F, quote=F)
+
+#full GHQT data
+check1 <- df11[,-c(6,8, 33)]
+check1 <- check1[complete.cases(check1),] # n= 5198
+
+#full GHQD data
+check2 <- df11[,-c(5,7,32)]
+check2 <- check2[complete.cases(check2),] # n= 5108
+
+```
+
+## Pathway Model Dataframe (Paternal Duos Only)
+
+```{r, eval=FALSE}
+
+rm(list=ls())
+library(dplyr)
+
+prs <- read.table("GSdep.all.score", header=T)
+head(prs)
+prs <- prs[,c(1:2,9)]
+colnames(prs)[3] <- c("depPRS_0.05")
+dim(prs)
+prs$depPRS_0.05 <- scale(prs$depPRS_0.05)
+
+duo <- read.table("GS_pat_duo", header=T)
+df <- duo[,c(1:4)]
+
+ghqt <- read.table("GHQ_tot", header=T)
+outliers <- read.table("ghqtOUTLIERS", header=T)
+ghqt <- ghqt[!(ghqt$IID%in%outliers$IID),]
+
+ghqd <- read.table("GHQ_dep", header=T)
+outliers <- read.table("ghqdOUTLIERS", header=T)
+ghqd <- ghqd[!(ghqd$IID%in%outliers$IID),]
+
+sex <- read.table("GS_SexClinic.fcovar", header=T)
+head(sex)
+sex <- sex[,c(1:3)]
+colnames(sex) <- c("FID", "IID", "SEX")
+sex$SEX <- as.factor(sex$SEX)
+dim(sex)
+
+age <- read.table("GS_Ages.qcovar", header=T)
+age <- age[,1:3]
+age$AGE <- scale(age$age)
+age <- age[,-3]
+colnames(age) <- c("FID", "IID", "AGE")
+
+pcs <- read.table("HM3mds.mds", header=T)
+pcs <- distinct(pcs, IID, .keep_all = TRUE) #Some IIDs are repeated, so need to sort this out#
+head(pcs)
+pcs <- pcs[,-3]
+dim(pcs) 
+
+##################################
+##Precorrect parental phenotypes##
+##################################
+
+######
+#GHQT#
+######
+
+# paternal GHQT #
+
+colnames(ghqt) <- c("PID", "pGHQT")
+colnames(pcs)[1:2] <- c("FID","PID")
+
+dfp <- merge(ghqt, pcs, by="PID")
+dfp <- dfp[complete.cases(dfp),]
+
+res <- lm(pGHQT~C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20, data=dfp)
+summary(res)
+result <- data.frame(FID=dfp$FID, PID=dfp$PID, pGHQT_res=residuals(res))
+result[,3] <- scale(result[,3])
+
+
+######
+#GHQD#
+######
+
+# paternal GHQD #
+
+colnames(ghqd) <- c("PID", "pGHQD")
+colnames(pcs)[1:2] <- c("FID","PID")
+
+dfp <- merge(ghqd, pcs, by="PID")
+dfp <- dfp[complete.cases(dfp),]
+
+res3 <- lm(pGHQD~C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20, data=dfp)
+summary(res3)
+result3 <- data.frame(FID=dfp$FID, PID=dfp$PID, pGHQD_res=residuals(res3))
+result3[,3] <- scale(result3[,3])
+
+###
+
+colnames(pcs)[1:2] <- c("FID", "IID")
+pcs[3:22] <- scale(pcs[3:22])
+
+colnames(ghqt) <- c("IID", "GHQT")
+ghqt$GHQT <- scale(ghqt$GHQT)
+
+colnames(ghqd) <- c("IID", "GHQD")
+ghqd$GHQD <- scale(ghqd$GHQD)
+
+dep <- merge(ghqt, ghqd, by="IID", all.x=T, all.y=T)
+
+df1 <- merge(df, dep, by= "IID", all.x=T)
+
+colnames(ghqt) <- c("PID", "pGHQT")
+df2 <- merge(df1, ghqt, by="PID", all.x=T)
+
+colnames(ghqd) <- c("PID", "pGHQD")
+df3 <- merge(df2, ghqd, by="PID", all.x=T)
+
+df4 <- merge(df3, sex, by=c("FID", "IID"), all.x=T)
+
+df5 <- merge(df4, age, by=c("FID", "IID"))
+
+colnames(age)[2:3] <- c("PID", "pAGE")
+df6 <- merge(df5, age, by=c("FID", "PID"))
+
+df7 <- merge(df6 , pcs, by=c("FID", "IID"))
+
+df8 <- merge(df7, result, by=c("FID", "PID"), all.x=T)
+
+df9 <- merge(df8, result3, by=c("FID", "PID"), all.x=T)
+
+colnames(prs)[2:3] <- c("IID", "depPRS_0.05")
+df10 <- merge(df9, prs, by=c("FID", "IID"), all.x=T)
+
+colnames(prs)[2:3] <- c("PID", "pdepPRS_0.05")
+df11 <- merge(df10, prs, by=c("FID", "PID"), all.x=T)
+
+df11$NFID <- paste(df11$PID, df11$MID, sep="_")
+names(df11)
+
+write.table(df11, "IGE_dep_pathway_df_patduo", row.names=F, quote=F)
+
+#full GHQT data
+check1 <- df11[,-c(6,8, 33)]
+check1 <- check1[complete.cases(check1),] # n=3403
+
+#full GHQD data
+check2 <- df11[,-c(5,7,32)]
+check2 <- check2[complete.cases(check2),] # n= 3364
+
+```
+
+# REGRESSION ANALYSES {.tabset}  
+
+**ALL VARIABLES ARE STANDARDISED - INTERPRET ACCORDINGLY**  
+Meaning as the IV increases by 1 standard deviation, the DV increases by Estimate*SD  
+All parent phenotypes are pre-corrected for their own 20 principle components and AGE
+
+A. oDEP ~ oPRS *This model captures direct GE*  
+B. oDEP ~ oPRS + mPRS + pPRS *This model captures both direct and indirect GE*  
+  
+C. oDEP ~ oPRS + mDEP + pDEP  
+D. oDEP ~ oPRS + mDEP + pDEP + mPRS + pPRS  
+
+*We are not interpreting beta estimates as these are likely to be biased/inaccurate as variables in the models are correlated!*
+Comparison of the models using log likelihood can help us infer whether the effects of indirect genetic effects are present (specifically comparison of model A vs B)  
+
+There are siblings in my trio offsprings. It is important to control for these sibling effects which may bias the interpretation of results. Sibling effects will be fitted as random effects in these models. The package lmerTest will be used. Siblings have the same parent IDs, so we can use this as an indicator variable that can be fixed as random.  
+
+## GHQ Total (Psychological Distress) {.tabset}
+
+Regression models are conducted on the whole, offspring, maternal and paternal samples.  
+
+### Whole Sample  
+
+```{r, eval=FALSE}
+rm(list=ls())
+
+library(lmerTest) #this package allows us to run regression models with fixed and random effects
+library(MuMIn) #this package allows us to obtain the R2 of our models, R2m (Marginal) R2 > fixed effects, R2c (Conditional) > whole model
+library(dplyr)
+
+regdf <- read.table("IGE_dep_regression_df", header=T) 
+regdf <- regdf[,-c(5,7,9,40:41)] #removing all GHQD related columns
+regdf <- regdf[complete.cases(regdf),] # n= 2315
+
+#Model 0 is to understand the variance that is being accounted for by the covariates 
+Model0 <- lmer(GHQTotal~C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20+AGE+SEX+(1|NFID), data=regdf)
+
+#only including results of AGE and SEX as this information is easy to understand and important
+results_0 <- cbind(as.data.frame(coef(summary(Model0))[c(1,22,23),]),as.data.frame(r.squaredGLMM(Model0)))
+results_0$Model <- "Model0"
+
+ModelA <- lmer(GHQTotal~C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20+AGE+SEX+depPRS_0.05+(1|NFID), data=regdf)
+results_A <- cbind(as.data.frame(coef(summary(ModelA))[c(1,24),]),as.data.frame(r.squaredGLMM(ModelA)))
+results_A$Model <- "ModelA"
+
+ModelB <- lmer(GHQTotal~C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20+AGE+SEX+depPRS_0.05+mdepPRS_0.05+pdepPRS_0.05+(1|NFID), data=regdf)   
+results_B <- cbind(as.data.frame(coef(summary(ModelB))[c(1,24:26),]),as.data.frame(r.squaredGLMM(ModelB)))
+results_B$Model <- "ModelB"
+  
+ModelC <- lmer(GHQTotal~C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20+AGE+SEX+depPRS_0.05+mGHQT_res+pGHQT_res+(1|NFID), data=regdf)   
+results_C <- cbind(as.data.frame(coef(summary(ModelC))[c(1,24:26),]),as.data.frame(r.squaredGLMM(ModelC)))
+results_C$Model <- "ModelC"
+
+ModelD <- lmer(GHQTotal~C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20+AGE+SEX+depPRS_0.05+mdepPRS_0.05+pdepPRS_0.05+mGHQT_res+pGHQT_res+(1|NFID), data=regdf)   
+results_D <- cbind(as.data.frame(coef(summary(ModelD))[c(1,24:28),]),as.data.frame(r.squaredGLMM(ModelD)))
+results_D$Model <- "ModelD"
+
+results <- bind_rows(results_0, results_A, results_B, results_C, results_D)
+write.csv(results, "GHQT_depPRS_0.05_reg_mixed_models.csv", row.names=T, quote=F)
+
+avb <- as.data.frame(anova(ModelA, ModelB))
+avb$comparison <- "A_v_B"
+
+avc <- as.data.frame(anova(ModelA, ModelC))
+avc$comparison <- "A_v_C"
+
+avd <- as.data.frame(anova(ModelA, ModelD))
+avd$comparison <- "A_v_D"
+
+bvc <- as.data.frame(anova(ModelB, ModelC))
+bvc$comparison <- "B_v_C"
+
+bvd <- as.data.frame(anova(ModelB, ModelD))
+bvd$comparison <- "B_v_D"
+
+cvd <- as.data.frame(anova(ModelC, ModelD))
+cvd$comparison <- "C_v_D"
+
+results <- bind_rows(avb, avc, avd, bvc, bvd, cvd)
+results[8,8] <- NA
+results$fdr <- p.adjust(results$`Pr(>Chisq)`, method="fdr", n=length(results$`Pr(>Chisq)`))
+
+write.csv(results, "GHQT_depPRS_0.05_reg_mixed_model_comparison.csv", row.names=T, quote=F)
+
+```
+
+![.](./DepressionResults/Slide5.PNG)  
+
+Results for the following can be found in the supplementary materials sheet 3  
+
+### Female Only Sample  
+
+```{r, eval=FALSE}
+rm(list=ls())
+
+library(lmerTest) #this package allows us to run regression models with fixed and random effects
+library(MuMIn) #this package allows us to obtain the R2 of our models, R2m (Marginal) R2 > fixed effects, R2c (Conditional) > whole model
+library(dplyr)
+
+regdf <- read.table("IGE_dep_regression_df", header=T) 
+regdf <- regdf[,-c(5,7,9,40:41)] #removing all GHQD related columns
+regdf <- regdf[complete.cases(regdf),]
+regdf <- subset(regdf, regdf$SEX=="F") # n=1311
+
+#Model 0 is to understand the variance that is being accounted for by the covariates 
+Model0 <- lmer(GHQTotal~C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20+AGE+(1|NFID), data=regdf)
+
+#only including results of AGE and SEX as this information is easy to understand and important
+results_0 <- cbind(as.data.frame(coef(summary(Model0))[c(1,21,22),]),as.data.frame(r.squaredGLMM(Model0)))
+results_0$Model <- "Model0"
+
+ModelA <- lmer(GHQTotal~C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20+AGE+depPRS_0.05+(1|NFID), data=regdf)
+results_A <- cbind(as.data.frame(coef(summary(ModelA))[c(1,23),]),as.data.frame(r.squaredGLMM(ModelA)))
+results_A$Model <- "ModelA"
+
+ModelB <- lmer(GHQTotal~C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20+AGE+depPRS_0.05+mdepPRS_0.05+pdepPRS_0.05+(1|NFID), data=regdf)   
+results_B <- cbind(as.data.frame(coef(summary(ModelB))[c(1,23:25),]),as.data.frame(r.squaredGLMM(ModelB)))
+results_B$Model <- "ModelB"
+  
+ModelC <- lmer(GHQTotal~C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20+AGE+depPRS_0.05+mGHQT_res+pGHQT_res+(1|NFID), data=regdf)   
+results_C <- cbind(as.data.frame(coef(summary(ModelC))[c(1,23:25),]),as.data.frame(r.squaredGLMM(ModelC)))
+results_C$Model <- "ModelC"
+
+ModelD <- lmer(GHQTotal~C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20+AGE+depPRS_0.05+mdepPRS_0.05+pdepPRS_0.05+mGHQT_res+pGHQT_res+(1|NFID), data=regdf)   
+results_D <- cbind(as.data.frame(coef(summary(ModelD))[c(1,23:27),]),as.data.frame(r.squaredGLMM(ModelD)))
+results_D$Model <- "ModelD"
+
+results <- bind_rows(results_0, results_A, results_B, results_C, results_D)
+write.csv(results, "GHQT_depPRS_0.05_reg_mixed_models_FEMALE.csv", row.names=T, quote=F)
+
+avb <- as.data.frame(anova(ModelA, ModelB))
+avb$comparison <- "A_v_B"
+
+avc <- as.data.frame(anova(ModelA, ModelC))
+avc$comparison <- "A_v_C"
+
+avd <- as.data.frame(anova(ModelA, ModelD))
+avd$comparison <- "A_v_D"
+
+bvc <- as.data.frame(anova(ModelB, ModelC))
+bvc$comparison <- "B_v_C"
+
+bvd <- as.data.frame(anova(ModelB, ModelD))
+bvd$comparison <- "B_v_D"
+
+cvd <- as.data.frame(anova(ModelC, ModelD))
+cvd$comparison <- "C_v_D"
+
+results <- bind_rows(avb, avc, avd, bvc, bvd, cvd)
+results[8,8] <- NA
+results$fdr <- p.adjust(results$`Pr(>Chisq)`, method="fdr", n=length(results$`Pr(>Chisq)`))
+
+write.csv(results, "GHQT_depPRS_0.05_reg_mixed_model_comparison_FEMALE.csv", row.names=T, quote=F)
+
+```
+
+### Male Only Sample
+
+```{r, eval=FALSE}
+rm(list=ls())
+
+library(lmerTest) #this package allows us to run regression models with fixed and random effects
+library(MuMIn) #this package allows us to obtain the R2 of our models, R2m (Marginal) R2 > fixed effects, R2c (Conditional) > whole model
+library(dplyr)
+
+regdf <- read.table("IGE_dep_regression_df", header=T) 
+regdf <- regdf[,-c(5,7,9,40:41)] #removing all GHQD related columns
+regdf <- regdf[complete.cases(regdf),]
+regdf <- subset(regdf, regdf$SEX=="M") # n=1004
+
+#Model 0 is to understand the variance that is being accounted for by the covariates 
+Model0 <- lmer(GHQTotal~C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20+AGE+(1|NFID), data=regdf)
+
+#only including results of AGE and SEX as this information is easy to understand and important
+results_0 <- cbind(as.data.frame(coef(summary(Model0))[c(1,21,22),]),as.data.frame(r.squaredGLMM(Model0)))
+results_0$Model <- "Model0"
+
+ModelA <- lmer(GHQTotal~C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20+AGE+depPRS_0.05+(1|NFID), data=regdf)
+results_A <- cbind(as.data.frame(coef(summary(ModelA))[c(1,23),]),as.data.frame(r.squaredGLMM(ModelA)))
+results_A$Model <- "ModelA"
+
+ModelB <- lmer(GHQTotal~C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20+AGE+depPRS_0.05+mdepPRS_0.05+pdepPRS_0.05+(1|NFID), data=regdf)   
+results_B <- cbind(as.data.frame(coef(summary(ModelB))[c(1,23:25),]),as.data.frame(r.squaredGLMM(ModelB)))
+results_B$Model <- "ModelB"
+  
+ModelC <- lmer(GHQTotal~C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20+AGE+depPRS_0.05+mGHQT_res+pGHQT_res+(1|NFID), data=regdf)   
+results_C <- cbind(as.data.frame(coef(summary(ModelC))[c(1,23:25),]),as.data.frame(r.squaredGLMM(ModelC)))
+results_C$Model <- "ModelC"
+
+ModelD <- lmer(GHQTotal~C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20+AGE+depPRS_0.05+mdepPRS_0.05+pdepPRS_0.05+mGHQT_res+pGHQT_res+(1|NFID), data=regdf)   
+results_D <- cbind(as.data.frame(coef(summary(ModelD))[c(1,23:27),]),as.data.frame(r.squaredGLMM(ModelD)))
+results_D$Model <- "ModelD"
+
+results <- bind_rows(results_0, results_A, results_B, results_C, results_D)
+write.csv(results, "GHQT_depPRS_0.05_reg_mixed_models_MALE.csv", row.names=T, quote=F)
+
+avb <- as.data.frame(anova(ModelA, ModelB))
+avb$comparison <- "A_v_B"
+
+avc <- as.data.frame(anova(ModelA, ModelC))
+avc$comparison <- "A_v_C"
+
+avd <- as.data.frame(anova(ModelA, ModelD))
+avd$comparison <- "A_v_D"
+
+bvc <- as.data.frame(anova(ModelB, ModelC))
+bvc$comparison <- "B_v_C"
+
+bvd <- as.data.frame(anova(ModelB, ModelD))
+bvd$comparison <- "B_v_D"
+
+cvd <- as.data.frame(anova(ModelC, ModelD))
+cvd$comparison <- "C_v_D"
+
+results <- bind_rows(avb, avc, avd, bvc, bvd, cvd)
+results[8,8] <- NA
+results$fdr <- p.adjust(results$`Pr(>Chisq)`, method="fdr", n=length(results$`Pr(>Chisq)`))
+write.csv(results, "GHQT_depPRS_0.05_reg_mixed_model_comparison_MALE.csv", row.names=T, quote=F)
+
+```
+
+## GHQ Depression {.tabset}  
+
+Regression models are conducted on the whole, offspring, maternal and paternal samples.  
+
+### Whole Sample
+
+```{r, eval=FALSE}
+rm(list=ls())
+
+library(lmerTest) #this package allows us to run regression models with fixed and random effects
+library(MuMIn) #this package allows us to obtain the R2 of our models, R2m (Marginal) R2 > fixed effects, R2c (Conditional) > whole model
+library(dplyr)
+
+regdf <- read.table("IGE_dep_regression_df", header=T) 
+regdf <- regdf[,-c(6,8,10,38:39)] #removing all GHQT related columns
+regdf <- regdf[complete.cases(regdf),] # n= 2280
+
+#Model 0 is to understand the variance that is being accounted for by the covariates 
+Model0 <- lmer(GHQDepression~C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20+AGE+SEX+(1|NFID), data=regdf)
+
+#only including results of AGE and SEX as this information is easy to understand and important
+results_0 <- cbind(as.data.frame(coef(summary(Model0))[c(1,22,23),]),as.data.frame(r.squaredGLMM(Model0)))
+results_0$Model <- "Model0"
+
+ModelA <- lmer(GHQDepression~C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20+AGE+SEX+depPRS_0.05+(1|NFID), data=regdf)
+results_A <- cbind(as.data.frame(coef(summary(ModelA))[c(1,24),]),as.data.frame(r.squaredGLMM(ModelA)))
+results_A$Model <- "ModelA"
+
+ModelB <- lmer(GHQDepression~C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20+AGE+SEX+depPRS_0.05+mdepPRS_0.05+pdepPRS_0.05+(1|NFID), data=regdf)   
+results_B <- cbind(as.data.frame(coef(summary(ModelB))[c(1,24:26),]),as.data.frame(r.squaredGLMM(ModelB)))
+results_B$Model <- "ModelB"
+  
+ModelC <- lmer(GHQDepression~C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20+AGE+SEX+depPRS_0.05+mGHQD_res+pGHQD_res+(1|NFID), data=regdf)   
+results_C <- cbind(as.data.frame(coef(summary(ModelC))[c(1,24:26),]),as.data.frame(r.squaredGLMM(ModelC)))
+results_C$Model <- "ModelC"
+
+ModelD <- lmer(GHQDepression~C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20+AGE+SEX+depPRS_0.05+mdepPRS_0.05+pdepPRS_0.05+mGHQD_res+pGHQD_res+(1|NFID), data=regdf)   
+results_D <- cbind(as.data.frame(coef(summary(ModelD))[c(1,24:28),]),as.data.frame(r.squaredGLMM(ModelD)))
+results_D$Model <- "ModelD"
+
+results <- bind_rows(results_0, results_A, results_B, results_C, results_D)
+write.csv(results, "GHQD_depPRS_0.05_reg_mixed_models.csv", row.names=T, quote=F)
+
+avb <- as.data.frame(anova(ModelA, ModelB))
+avb$comparison <- "A_v_B"
+
+avc <- as.data.frame(anova(ModelA, ModelC))
+avc$comparison <- "A_v_C"
+
+avd <- as.data.frame(anova(ModelA, ModelD))
+avd$comparison <- "A_v_D"
+
+bvc <- as.data.frame(anova(ModelB, ModelC))
+bvc$comparison <- "B_v_C"
+
+bvd <- as.data.frame(anova(ModelB, ModelD))
+bvd$comparison <- "B_v_D"
+
+cvd <- as.data.frame(anova(ModelC, ModelD))
+cvd$comparison <- "C_v_D"
+
+results <- bind_rows(avb, avc, avd, bvc, bvd, cvd)
+results[8,8] <- NA
+results$fdr <- p.adjust(results$`Pr(>Chisq)`, method="fdr", n=length(results$`Pr(>Chisq)`))
+write.csv(results, "GHQD_depPRS_0.05_reg_mixed_model_comparison.csv", row.names=T, quote=F)
+
+```
+
+![.](./DepressionResults/Slide6.PNG)  
+
+Results can be found in the supplementary materials sheet 3
+
+### Female Only Sample
+
+```{r, eval=FALSE}
+rm(list=ls())
+
+library(lmerTest) #this package allows us to run regression models with fixed and random effects
+library(MuMIn) #this package allows us to obtain the R2 of our models, R2m (Marginal) R2 > fixed effects, R2c (Conditional) > whole model
+library(dplyr)
+
+regdf <- read.table("IGE_dep_regression_df", header=T) 
+regdf <- regdf[,-c(6,8,10,38:39)] #removing all GHQT related columns
+regdf <- regdf[complete.cases(regdf),]
+regdf <- subset(regdf, regdf$SEX=="F") # n=1311
+
+#Model 0 is to understand the variance that is being accounted for by the covariates 
+Model0 <- lmer(GHQDepression~C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20+AGE+(1|NFID), data=regdf)
+
+#only including results of AGE and SEX as this information is easy to understand and important
+results_0 <- cbind(as.data.frame(coef(summary(Model0))[c(1,21,22),]),as.data.frame(r.squaredGLMM(Model0)))
+results_0$Model <- "Model0"
+
+ModelA <- lmer(GHQDepression~C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20+AGE+depPRS_0.05+(1|NFID), data=regdf)
+results_A <- cbind(as.data.frame(coef(summary(ModelA))[c(1,23),]),as.data.frame(r.squaredGLMM(ModelA)))
+results_A$Model <- "ModelA"
+
+ModelB <- lmer(GHQDepression~C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20+AGE+depPRS_0.05+mdepPRS_0.05+pdepPRS_0.05+(1|NFID), data=regdf)   
+results_B <- cbind(as.data.frame(coef(summary(ModelB))[c(1,23:25),]),as.data.frame(r.squaredGLMM(ModelB)))
+results_B$Model <- "ModelB"
+  
+ModelC <- lmer(GHQDepression~C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20+AGE+depPRS_0.05+mGHQD_res+pGHQD_res+(1|NFID), data=regdf)   
+results_C <- cbind(as.data.frame(coef(summary(ModelC))[c(1,23:25),]),as.data.frame(r.squaredGLMM(ModelC)))
+results_C$Model <- "ModelC"
+
+ModelD <- lmer(GHQDepression~C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20+AGE+depPRS_0.05+mdepPRS_0.05+pdepPRS_0.05+mGHQD_res+pGHQD_res+(1|NFID), data=regdf)   
+results_D <- cbind(as.data.frame(coef(summary(ModelD))[c(1,23:27),]),as.data.frame(r.squaredGLMM(ModelD)))
+results_D$Model <- "ModelD"
+
+results <- bind_rows(results_0, results_A, results_B, results_C, results_D)
+write.csv(results, "GHQD_depPRS_0.05_reg_mixed_models_FEMALE.csv", row.names=T, quote=F)
+
+avb <- as.data.frame(anova(ModelA, ModelB))
+avb$comparison <- "A_v_B"
+
+avc <- as.data.frame(anova(ModelA, ModelC))
+avc$comparison <- "A_v_C"
+
+avd <- as.data.frame(anova(ModelA, ModelD))
+avd$comparison <- "A_v_D"
+
+bvc <- as.data.frame(anova(ModelB, ModelC))
+bvc$comparison <- "B_v_C"
+
+bvd <- as.data.frame(anova(ModelB, ModelD))
+bvd$comparison <- "B_v_D"
+
+cvd <- as.data.frame(anova(ModelC, ModelD))
+cvd$comparison <- "C_v_D"
+
+results <- bind_rows(avb, avc, avd, bvc, bvd, cvd)
+results[8,8] <- NA
+results$fdr <- p.adjust(results$`Pr(>Chisq)`, method="fdr", n=length(results$`Pr(>Chisq)`))
+write.csv(results, "GHQD_depPRS_0.05_reg_mixed_model_comparison_FEMALE.csv", row.names=T, quote=F)
+
+```
+
+### Male Only Sample
+
+```{r, eval=FALSE}
+rm(list=ls())
+
+library(lmerTest) #this package allows us to run regression models with fixed and random effects
+library(MuMIn) #this package allows us to obtain the R2 of our models, R2m (Marginal) R2 > fixed effects, R2c (Conditional) > whole model
+library(dplyr)
+
+regdf <- read.table("IGE_dep_regression_df", header=T) 
+regdf <- regdf[,-c(6,8,10,38:39)] #removing all GHQT related columns
+regdf <- regdf[complete.cases(regdf),]
+regdf <- subset(regdf, regdf$SEX=="M") # n=1004
+
+#Model 0 is to understand the variance that is being accounted for by the covariates 
+Model0 <- lmer(GHQDepression~C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20+AGE+(1|NFID), data=regdf)
+
+#only including results of AGE and SEX as this information is easy to understand and important
+results_0 <- cbind(as.data.frame(coef(summary(Model0))[c(1,21,22),]),as.data.frame(r.squaredGLMM(Model0)))
+results_0$Model <- "Model0"
+
+ModelA <- lmer(GHQDepression~C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20+AGE+depPRS_0.05+(1|NFID), data=regdf)
+results_A <- cbind(as.data.frame(coef(summary(ModelA))[c(1,23),]),as.data.frame(r.squaredGLMM(ModelA)))
+results_A$Model <- "ModelA"
+
+ModelB <- lmer(GHQDepression~C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20+AGE+depPRS_0.05+mdepPRS_0.05+pdepPRS_0.05+(1|NFID), data=regdf)   
+results_B <- cbind(as.data.frame(coef(summary(ModelB))[c(1,23:25),]),as.data.frame(r.squaredGLMM(ModelB)))
+results_B$Model <- "ModelB"
+  
+ModelC <- lmer(GHQDepression~C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20+AGE+depPRS_0.05+mGHQD_res+pGHQD_res+(1|NFID), data=regdf)   
+results_C <- cbind(as.data.frame(coef(summary(ModelC))[c(1,23:25),]),as.data.frame(r.squaredGLMM(ModelC)))
+results_C$Model <- "ModelC"
+
+ModelD <- lmer(GHQDepression~C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20+AGE+depPRS_0.05+mdepPRS_0.05+pdepPRS_0.05+mGHQD_res+pGHQD_res+(1|NFID), data=regdf)   
+results_D <- cbind(as.data.frame(coef(summary(ModelD))[c(1,23:27),]),as.data.frame(r.squaredGLMM(ModelD)))
+results_D$Model <- "ModelD"
+
+results <- bind_rows(results_0, results_A, results_B, results_C, results_D)
+write.csv(results, "GHQD_depPRS_0.05_reg_mixed_models_MALE.csv", row.names=T, quote=F)
+
+avb <- as.data.frame(anova(ModelA, ModelB))
+avb$comparison <- "A_v_B"
+
+avc <- as.data.frame(anova(ModelA, ModelC))
+avc$comparison <- "A_v_C"
+
+avd <- as.data.frame(anova(ModelA, ModelD))
+avd$comparison <- "A_v_D"
+
+bvc <- as.data.frame(anova(ModelB, ModelC))
+bvc$comparison <- "B_v_C"
+
+bvd <- as.data.frame(anova(ModelB, ModelD))
+bvd$comparison <- "B_v_D"
+
+cvd <- as.data.frame(anova(ModelC, ModelD))
+cvd$comparison <- "C_v_D"
+
+results <- bind_rows(avb, avc, avd, bvc, bvd, cvd)
+results[8,8] <- NA
+results$fdr <- p.adjust(results$`Pr(>Chisq)`, method="fdr", n=length(results$`Pr(>Chisq)`))
+write.csv(results, "GHQD_depPRS_0.05_reg_mixed_model_comparison_MALE.csv", row.names=T, quote=F)
+
+```
+
+# PATHWAY ANALYSES  {.tabset}  
+
+Pathway analyses can model the relationships between the IVs unlike regression models. Coefficients, however, can be interpreted in the same way you would with regression models.  
+
+We will explore 3 different pathway models  
+
+Simple model  
+
+![.](./DepressionResults/Slide7.PNG)
+
+Extended (Restricted) model   
+
+![.](./DepressionResults/Slide8.PNG)
+
+Extended model  
+
+![.](./DepressionResults/Slide9.PNG)
+
+Pathway analyses need to be run with SEs bootstrapped. We will also fix pathways a and d to 0.5 as the effect of parental PRS on offspring PRS should be 0.5 as each parent passes on 50% of their genome to the offspring. This will also mean we more degrees of freedom which impacts the analysis power to avoid type 1 and type 2 errors.  
+
+Note that parent phenotypes are pre-corrected for their own 20 principle components from a GRM of Generation Scotland. The phenotype was not pre-corrected for AGE, instead, this was included in the statistical model as this could provide useful information without making the results difficult to read.  
+
+## GHQ Total {.tabset}  
+
+### Path a,d Restricted  
+
+```{r, eval=FALSE}
+
+rm(list=ls())
+library(lavaan)
+
+data <- read.table("IGE_dep_pathway_df", header=T)
+data <- data[,-c(5,7,9, 40, 41)]
+data <- data[complete.cases(data),] #n=2315
+
+##############
+#SIMPLE MODEL#
+##############
+
+# Define model
+
+model <- ' 
+
+# direct effects
+GHQTotal ~ AGE+SEX+C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20
+GHQTotal ~ c*mdepPRS_0.05
+GHQTotal ~ f*pdepPRS_0.05             
+
+# mediator
+depPRS_0.05 ~ 0.5*mdepPRS_0.05
+depPRS_0.05 ~ 0.5*pdepPRS_0.05
+GHQTotal ~ b*depPRS_0.05
+
+# indirect effects (a*b, d*b)
+ab := 0.5*b
+db := 0.5*b
+
+# total effects 
+total_mum := c + (0.5*b)
+total_dad := f + (0.5*b)
+
+# covariance
+mdepPRS_0.05 ~~ pdepPRS_0.05
+'
+
+# Fit the model
+fitM <- sem(model, data=data, se="bootstrap", estimator='ML')
+
+sem_model <- summary(fitM, standardized=TRUE, fit.measures=TRUE, ci=TRUE)
+sem_model_df <- as.data.frame(sem_model$PE)
+sem_model_final <- sem_model_df[sem_model_df$label != "", c(1:4,6:7,9:11)] #here we are extracting values of interest e.g. est, se, p, ci
+simple_model <- cbind(sem_model_final, AIC(fitM))
+
+write.csv(simple_model, "depPRS_GHQT_0.05_pa_m1_bs.csv", row.names=F, quote=F)
+
+################
+#EXTENDED MODEL#
+################
+
+rm(list=ls())
+data <- read.table("IGE_dep_pathway_df", header=T)
+data <- data[,-c(5,7,9, 40, 41)]
+data <- data[complete.cases(data),] #n=2315
+
+# Define model
+
+model <- '
+
+#direct effects
+GHQTotal ~ AGE+SEX+C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20
+GHQTotal ~ c*mdepPRS_0.05
+GHQTotal ~ f*pdepPRS_0.05         
+
+#mediator
+depPRS_0.05 ~ 0.5*mdepPRS_0.05
+depPRS_0.05 ~ 0.5*pdepPRS_0.05 
+
+GHQTotal ~ b*depPRS_0.05
+
+pGHQT_res ~ g*pdepPRS_0.05+pAGE
+mGHQT_res ~ h*mdepPRS_0.05+mAGE
+
+GHQTotal ~ i*pGHQT_res
+GHQTotal ~ j*mGHQT_res
+
+# indirect effects (a*b, d*b)
+ab := 0.5*b
+db := 0.5*b
+gi := g*i
+hj := h*j
+
+
+# total effects 
+total_mum := c + (0.5*b) + (h*j) ###### THIS IS WHAT I HAVE ADDED - NOT SURE IF ITS RIGHT THO #####
+total_dad := f + (0.5*b) + (g*i) ###### THIS IS WHAT I HAVE ADDED - NOT SURE IF ITS RIGHT THO #####
+
+# covariance
+mdepPRS_0.05 ~~ pdepPRS_0.05
+mGHQT_res ~~ pGHQT_res
+
+'
+
+# Fit the model
+fitM <- sem(model, data=data, se="bootstrap", estimator='ML')
+sem_model <- summary(fitM, standardized=TRUE, fit.measures=TRUE, ci=TRUE)
+sem_model_df <- as.data.frame(sem_model$PE)
+sem_model_final <- sem_model_df[sem_model_df$label != "", c(1:4,6:7,9:11)] #here we are extracting values of interest e.g. est, se, p, ci
+extended_model <- cbind(sem_model_final, AIC(fitM))
+
+write.csv(extended_model, "depPRS_GHQT_0.05_pa_m2_bs.csv", row.names=F, quote=F)
+
+#############################
+#EXTENDED (RESTRICTED) MODEL#
+#############################
+
+rm(list=ls())
+data <- read.table("IGE_dep_pathway_df", header=T)
+data <- data[,-c(5,7,9, 40, 41)]
+data <- data[complete.cases(data),] #n=2315
+
+# Define model
+
+model <- ' 
+
+#direct effects
+GHQTotal ~ AGE+SEX+C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20
+
+#mediator
+depPRS_0.05 ~ 0.5*mdepPRS_0.05
+depPRS_0.05 ~ 0.5*pdepPRS_0.05
+
+GHQTotal ~ b*depPRS_0.05
+
+pGHQT_res ~ g*pdepPRS_0.05+pAGE
+mGHQT_res ~ h*mdepPRS_0.05+mAGE
+
+GHQTotal ~ i*pGHQT_res
+GHQTotal ~ j*mGHQT_res
+
+# indirect effects (a*b, d*b)
+ab := 0.5*b
+db := 0.5*b
+gi := g*i
+hj := h*j
+
+
+# total effects 
+total_mum := (0.5*b) + (h*j) ###### THIS IS WHAT I HAVE ADDED - NOT SURE IF ITS RIGHT THO #####
+total_dad := (0.5*b) + (g*i) ###### THIS IS WHAT I HAVE ADDED - NOT SURE IF ITS RIGHT THO #####
+
+# covariance
+mdepPRS_0.05 ~~ pdepPRS_0.05
+mGHQT_res ~~ pGHQT_res
+'
+
+# Fit the model
+fitM <- sem(model, data=data, se="bootstrap", estimator='ML')
+sem_model <- summary(fitM, standardized=TRUE, fit.measures=TRUE, ci=TRUE)
+sem_model_df <- as.data.frame(sem_model$PE)
+sem_model_final <- sem_model_df[sem_model_df$label != "", c(1:4,6:7,9:11)] #here we are extracting values of interest e.g. est, se, p, ci
+extended_restricted_model <- cbind(sem_model_final, AIC(fitM))
+
+write.csv(extended_restricted_model, "depPRS_GHQT_0.05_pa_m3_bs.csv", row.names=F, quote=F)
+```
+
+![.](./DepressionResults/Slide10.PNG)  
+
+### All Paths Freely Estimated  
+ 
+GHQ Total
+```{r, eval=FALSE}
+
+rm(list=ls())
+library(lavaan)
+
+data <- read.table("IGE_dep_pathway_df", header=T)
+data <- data[,-c(5,7,9, 40, 41)]
+data <- data[complete.cases(data),] #n=2315
+
+##############
+#SIMPLE MODEL#
+##############
+
+# Define model
+
+model <- ' 
+
+# direct effects
+GHQTotal ~ AGE+SEX+C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20
+GHQTotal ~ c*mdepPRS_0.05
+GHQTotal ~ f*pdepPRS_0.05             
+
+# mediator
+depPRS_0.05 ~ a*mdepPRS_0.05
+depPRS_0.05 ~ d*pdepPRS_0.05
+GHQTotal ~ b*depPRS_0.05
+
+# indirect effects (a*b, d*b)
+ab := a*b
+db := d*b
+
+# total effects 
+total_mum := c + (a*b)
+total_dad := f + (d*b)
+
+# covariance
+mdepPRS_0.05 ~~ pdepPRS_0.05
+'
+
+# Fit the model
+fitM <- sem(model, data=data, se="bootstrap", estimator='ML')
+
+sem_model <- summary(fitM, standardized=TRUE, fit.measures=TRUE, ci=TRUE)
+sem_model_df <- as.data.frame(sem_model$PE)
+sem_model_final <- sem_model_df[sem_model_df$label != "", c(1:4,6:7,9:11)] #here we are extracting values of interest e.g. est, se, p, ci
+simple_model <- cbind(sem_model_final, AIC(fitM))
+
+write.csv(simple_model, "depPRS_GHQT_0.05_pa_m1_bs_fm.csv", row.names=F, quote=F)
+
+################
+#EXTENDED MODEL#
+################
+
+rm(list=ls())
+data <- read.table("IGE_dep_pathway_df", header=T)
+data <- data[,-c(5,7,9, 40, 41)]
+data <- data[complete.cases(data),] #n=2315
+
+# Define model
+
+model <- '
+
+#direct effects
+GHQTotal ~ AGE+SEX+C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20
+GHQTotal ~ c*mdepPRS_0.05
+GHQTotal ~ f*pdepPRS_0.05         
+
+#mediator
+depPRS_0.05 ~ a*mdepPRS_0.05
+depPRS_0.05 ~ d*pdepPRS_0.05 
+
+GHQTotal ~ b*depPRS_0.05
+
+pGHQT_res ~ g*pdepPRS_0.05+pAGE
+mGHQT_res ~ h*mdepPRS_0.05+mAGE
+
+GHQTotal ~ i*pGHQT_res
+GHQTotal ~ j*mGHQT_res
+
+# indirect effects (a*b, d*b)
+ab := a*b
+db := d*b
+gi := g*i
+hj := h*j
+
+
+# total effects 
+total_mum := c + (a*b) + (h*j) ###### THIS IS WHAT I HAVE ADDED - NOT SURE IF ITS RIGHT THO #####
+total_dad := f + (d*b) + (g*i) ###### THIS IS WHAT I HAVE ADDED - NOT SURE IF ITS RIGHT THO #####
+
+# covariance
+mdepPRS_0.05 ~~ pdepPRS_0.05
+mGHQT_res ~~ pGHQT_res
+
+'
+
+# Fit the model
+fitM <- sem(model, data=data, se="bootstrap", estimator='ML')
+sem_model <- summary(fitM, standardized=TRUE, fit.measures=TRUE, ci=TRUE)
+sem_model_df <- as.data.frame(sem_model$PE)
+sem_model_final <- sem_model_df[sem_model_df$label != "", c(1:4,6:7,9:11)] #here we are extracting values of interest e.g. est, se, p, ci
+extended_model <- cbind(sem_model_final, AIC(fitM))
+
+write.csv(extended_model, "depPRS_GHQT_0.05_pa_m2_bs_fm.csv", row.names=F, quote=F)
+
+#############################
+#EXTENDED (RESTRICTED) MODEL#
+#############################
+
+rm(list=ls())
+data <- read.table("IGE_dep_pathway_df", header=T)
+data <- data[,-c(5,7,9, 40, 41)]
+data <- data[complete.cases(data),] #n=2315
+
+# Define model
+
+model <- ' 
+
+#direct effects
+GHQTotal ~ AGE+SEX+C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20
+
+#mediator
+depPRS_0.05 ~ a*mdepPRS_0.05
+depPRS_0.05 ~ d*pdepPRS_0.05
+
+GHQTotal ~ b*depPRS_0.05
+
+pGHQT_res ~ g*pdepPRS_0.05+pAGE
+mGHQT_res ~ h*mdepPRS_0.05+mAGE
+
+GHQTotal ~ i*pGHQT_res
+GHQTotal ~ j*mGHQT_res
+
+# indirect effects (a*b, d*b)
+ab := a*b
+db := d*b
+gi := g*i
+hj := h*j
+
+
+# total effects 
+total_mum := (a*b) + (h*j) ###### THIS IS WHAT I HAVE ADDED - NOT SURE IF ITS RIGHT THO #####
+total_dad := (d*b) + (g*i) ###### THIS IS WHAT I HAVE ADDED - NOT SURE IF ITS RIGHT THO #####
+
+# covariance
+mdepPRS_0.05 ~~ pdepPRS_0.05
+mGHQT_res ~~ pGHQT_res
+'
+
+# Fit the model
+fitM <- sem(model, data=data, se="bootstrap", estimator='ML')
+sem_model <- summary(fitM, standardized=TRUE, fit.measures=TRUE, ci=TRUE)
+sem_model_df <- as.data.frame(sem_model$PE)
+sem_model_final <- sem_model_df[sem_model_df$label != "", c(1:4,6:7,9:11)] #here we are extracting values of interest e.g. est, se, p, ci
+extended_restricted_model <- cbind(sem_model_final, AIC(fitM))
+
+write.csv(extended_restricted_model, "depPRS_GHQT_0.05_pa_m3_bs_fm.csv", row.names=F, quote=F)
+```
+
+### Female Only  
+
+Female Sample: GHQ Total
+```{r, eval=FALSE}
+
+rm(list=ls())
+library(lavaan)
+
+data <- read.table("IGE_dep_pathway_df", header=T)
+data <- data[,-c(5,7,9, 40, 41)]
+data <- subset(data, data$SEX=="F")
+data <- data[complete.cases(data),] #n=1311
+
+##############
+#SIMPLE MODEL#
+##############
+
+# Define model
+
+model <- ' 
+
+# direct effects
+GHQTotal ~ AGE+C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20
+GHQTotal ~ c*mdepPRS_0.05
+GHQTotal ~ f*pdepPRS_0.05             
+
+# mediator
+depPRS_0.05 ~ 0.5*mdepPRS_0.05
+depPRS_0.05 ~ 0.5*pdepPRS_0.05
+GHQTotal ~ b*depPRS_0.05
+
+# indirect effects (a*b, d*b)
+ab := 0.5*b
+db := 0.5*b
+
+# total effects 
+total_mum := c + (0.5*b)
+total_dad := f + (0.5*b)
+
+# covariance
+mdepPRS_0.05 ~~ pdepPRS_0.05
+'
+
+# Fit the model
+fitM <- sem(model, data=data, se="bootstrap", estimator='ML')
+
+sem_model <- summary(fitM, standardized=TRUE, fit.measures=TRUE, ci=TRUE)
+sem_model_df <- as.data.frame(sem_model$PE)
+sem_model_final <- sem_model_df[sem_model_df$label != "", c(1:4,6:7,9:11)] #here we are extracting values of interest e.g. est, se, p, ci
+simple_model <- cbind(sem_model_final, AIC(fitM))
+
+write.csv(simple_model, "depPRS_GHQT_0.05_pa_m1_bs_FEMALE.csv", row.names=F, quote=F)
+
+################
+#EXTENDED MODEL#
+################
+
+rm(list=ls())
+data <- read.table("IGE_dep_pathway_df", header=T)
+data <- data[,-c(5,7,9, 40, 41)]
+data <- subset(data, data$SEX=="F")
+data <- data[complete.cases(data),] #n=1311
+
+# Define model
+
+model <- '
+
+#direct effects
+GHQTotal ~ AGE+C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20
+GHQTotal ~ c*mdepPRS_0.05
+GHQTotal ~ f*pdepPRS_0.05         
+
+#mediator
+depPRS_0.05 ~ 0.5*mdepPRS_0.05
+depPRS_0.05 ~ 0.5*pdepPRS_0.05 
+
+GHQTotal ~ b*depPRS_0.05
+
+pGHQT_res ~ g*pdepPRS_0.05+pAGE
+mGHQT_res ~ h*mdepPRS_0.05+mAGE
+
+GHQTotal ~ i*pGHQT_res
+GHQTotal ~ j*mGHQT_res
+
+# indirect effects (a*b, d*b)
+ab := 0.5*b
+db := 0.5*b
+gi := g*i
+hj := h*j
+
+
+# total effects 
+total_mum := c + (0.5*b) + (h*j) ###### THIS IS WHAT I HAVE ADDED - NOT SURE IF ITS RIGHT THO #####
+total_dad := f + (0.5*b) + (g*i) ###### THIS IS WHAT I HAVE ADDED - NOT SURE IF ITS RIGHT THO #####
+
+# covariance
+mdepPRS_0.05 ~~ pdepPRS_0.05
+mGHQT_res ~~ pGHQT_res
+
+'
+
+# Fit the model
+fitM <- sem(model, data=data, se="bootstrap", estimator='ML')
+sem_model <- summary(fitM, standardized=TRUE, fit.measures=TRUE, ci=TRUE)
+sem_model_df <- as.data.frame(sem_model$PE)
+sem_model_final <- sem_model_df[sem_model_df$label != "", c(1:4,6:7,9:11)] #here we are extracting values of interest e.g. est, se, p, ci
+extended_model <- cbind(sem_model_final, AIC(fitM))
+
+write.csv(extended_model, "depPRS_GHQT_0.05_pa_m2_bs_FEMALE.csv", row.names=F, quote=F)
+
+#############################
+#EXTENDED (RESTRICTED) MODEL#
+#############################
+
+rm(list=ls())
+data <- read.table("IGE_dep_pathway_df", header=T)
+data <- data[,-c(5,7,9, 40, 41)]
+data <- subset(data, data$SEX=="F")
+data <- data[complete.cases(data),] #n=1311
+
+# Define model
+
+model <- ' 
+
+#direct effects
+GHQTotal ~ AGE+C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20
+
+#mediator
+depPRS_0.05 ~ 0.5*mdepPRS_0.05
+depPRS_0.05 ~ 0.5*pdepPRS_0.05
+
+GHQTotal ~ b*depPRS_0.05
+
+pGHQT_res ~ g*pdepPRS_0.05+pAGE
+mGHQT_res ~ h*mdepPRS_0.05+mAGE
+
+GHQTotal ~ i*pGHQT_res
+GHQTotal ~ j*mGHQT_res
+
+# indirect effects (a*b, d*b)
+ab := 0.5*b
+db := 0.5*b
+gi := g*i
+hj := h*j
+
+
+# total effects 
+total_mum := (0.5*b) + (h*j) ###### THIS IS WHAT I HAVE ADDED - NOT SURE IF ITS RIGHT THO #####
+total_dad := (0.5*b) + (g*i) ###### THIS IS WHAT I HAVE ADDED - NOT SURE IF ITS RIGHT THO #####
+
+# covariance
+mdepPRS_0.05 ~~ pdepPRS_0.05
+mGHQT_res ~~ pGHQT_res
+'
+
+# Fit the model
+fitM <- sem(model, data=data, se="bootstrap", estimator='ML')
+sem_model <- summary(fitM, standardized=TRUE, fit.measures=TRUE, ci=TRUE)
+sem_model_df <- as.data.frame(sem_model$PE)
+sem_model_final <- sem_model_df[sem_model_df$label != "", c(1:4,6:7,9:11)] #here we are extracting values of interest e.g. est, se, p, ci
+extended_restricted_model <- cbind(sem_model_final, AIC(fitM))
+
+write.csv(extended_restricted_model, "depPRS_GHQT_0.05_pa_m3_bs_FEMALE.csv", row.names=F, quote=F)
+```
+
+### Male Only Sample
+
+Male Sample: GHQ Total
+
+```{r, eval=FALSE}
+
+rm(list=ls())
+library(lavaan)
+
+data <- read.table("IGE_dep_pathway_df", header=T)
+data <- data[,-c(5,7,9, 40, 41)]
+data <- subset(data, data$SEX=="M")
+data <- data[complete.cases(data),] #n=1004
+
+##############
+#SIMPLE MODEL#
+##############
+
+# Define model
+
+model <- ' 
+
+# direct effects
+GHQTotal ~ AGE+C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20
+GHQTotal ~ c*mdepPRS_0.05
+GHQTotal ~ f*pdepPRS_0.05             
+
+# mediator
+depPRS_0.05 ~ 0.5*mdepPRS_0.05
+depPRS_0.05 ~ 0.5*pdepPRS_0.05
+GHQTotal ~ b*depPRS_0.05
+
+# indirect effects (a*b, d*b)
+ab := 0.5*b
+db := 0.5*b
+
+# total effects 
+total_mum := c + (0.5*b)
+total_dad := f + (0.5*b)
+
+# covariance
+mdepPRS_0.05 ~~ pdepPRS_0.05
+'
+
+# Fit the model
+fitM <- sem(model, data=data, se="bootstrap", estimator='ML')
+
+sem_model <- summary(fitM, standardized=TRUE, fit.measures=TRUE, ci=TRUE)
+sem_model_df <- as.data.frame(sem_model$PE)
+sem_model_final <- sem_model_df[sem_model_df$label != "", c(1:4,6:7,9:11)] #here we are extracting values of interest e.g. est, se, p, ci
+simple_model <- cbind(sem_model_final, AIC(fitM))
+
+write.csv(simple_model, "depPRS_GHQT_0.05_pa_m1_bs_MALE.csv", row.names=F, quote=F)
+
+################
+#EXTENDED MODEL#
+################
+
+rm(list=ls())
+data <- read.table("IGE_dep_pathway_df", header=T)
+data <- data[,-c(5,7,9, 40, 41)]
+data <- subset(data, data$SEX=="M")
+data <- data[complete.cases(data),] #n=1004
+
+# Define model
+
+model <- '
+
+#direct effects
+GHQTotal ~ AGE+C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20
+GHQTotal ~ c*mdepPRS_0.05
+GHQTotal ~ f*pdepPRS_0.05         
+
+#mediator
+depPRS_0.05 ~ 0.5*mdepPRS_0.05
+depPRS_0.05 ~ 0.5*pdepPRS_0.05 
+
+GHQTotal ~ b*depPRS_0.05
+
+pGHQT_res ~ g*pdepPRS_0.05+pAGE
+mGHQT_res ~ h*mdepPRS_0.05+mAGE
+
+GHQTotal ~ i*pGHQT_res
+GHQTotal ~ j*mGHQT_res
+
+# indirect effects (a*b, d*b)
+ab := 0.5*b
+db := 0.5*b
+gi := g*i
+hj := h*j
+
+
+# total effects 
+total_mum := c + (0.5*b) + (h*j) ###### THIS IS WHAT I HAVE ADDED - NOT SURE IF ITS RIGHT THO #####
+total_dad := f + (0.5*b) + (g*i) ###### THIS IS WHAT I HAVE ADDED - NOT SURE IF ITS RIGHT THO #####
+
+# covariance
+mdepPRS_0.05 ~~ pdepPRS_0.05
+mGHQT_res ~~ pGHQT_res
+
+'
+
+# Fit the model
+fitM <- sem(model, data=data, se="bootstrap", estimator='ML')
+sem_model <- summary(fitM, standardized=TRUE, fit.measures=TRUE, ci=TRUE)
+sem_model_df <- as.data.frame(sem_model$PE)
+sem_model_final <- sem_model_df[sem_model_df$label != "", c(1:4,6:7,9:11)] #here we are extracting values of interest e.g. est, se, p, ci
+extended_model <- cbind(sem_model_final, AIC(fitM))
+
+write.csv(extended_model, "depPRS_GHQT_0.05_pa_m2_bs_MALE.csv", row.names=F, quote=F)
+
+#############################
+#EXTENDED (RESTRICTED) MODEL#
+#############################
+
+rm(list=ls())
+data <- read.table("IGE_dep_pathway_df", header=T)
+data <- data[,-c(5,7,9, 40, 41)]
+data <- subset(data, data$SEX=="M")
+data <- data[complete.cases(data),] #n=1004
+
+# Define model
+
+model <- ' 
+
+#direct effects
+GHQTotal ~ AGE+C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20
+
+#mediator
+depPRS_0.05 ~ 0.5*mdepPRS_0.05
+depPRS_0.05 ~ 0.5*pdepPRS_0.05
+
+GHQTotal ~ b*depPRS_0.05
+
+pGHQT_res ~ g*pdepPRS_0.05+pAGE
+mGHQT_res ~ h*mdepPRS_0.05+mAGE
+
+GHQTotal ~ i*pGHQT_res
+GHQTotal ~ j*mGHQT_res
+
+# indirect effects (a*b, d*b)
+ab := 0.5*b
+db := 0.5*b
+gi := g*i
+hj := h*j
+
+
+# total effects 
+total_mum := (0.5*b) + (h*j) ###### THIS IS WHAT I HAVE ADDED - NOT SURE IF ITS RIGHT THO #####
+total_dad := (0.5*b) + (g*i) ###### THIS IS WHAT I HAVE ADDED - NOT SURE IF ITS RIGHT THO #####
+
+# covariance
+mdepPRS_0.05 ~~ pdepPRS_0.05
+mGHQT_res ~~ pGHQT_res
+'
+
+# Fit the model
+fitM <- sem(model, data=data, se="bootstrap", estimator='ML')
+sem_model <- summary(fitM, standardized=TRUE, fit.measures=TRUE, ci=TRUE)
+sem_model_df <- as.data.frame(sem_model$PE)
+sem_model_final <- sem_model_df[sem_model_df$label != "", c(1:4,6:7,9:11)] #here we are extracting values of interest e.g. est, se, p, ci
+extended_restricted_model <- cbind(sem_model_final, AIC(fitM))
+
+write.csv(extended_restricted_model, "depPRS_GHQT_0.05_pa_m3_bs_MALE.csv", row.names=F, quote=F)
+```
+
+### Singleton Sample  
+
+Removing siblings to double check that estimates do not change substantially  
+GHQ Total
+```{r, eval=FALSE}
+
+rm(list=ls())
+library(lavaan)
+library(dplyr)
+
+data <- read.table("IGE_dep_pathway_df", header=T)
+data <- data[,-c(5,7,9, 40, 41)]
+data <- data[!duplicated(data$NFID),]
+data <- data[complete.cases(data),] #1400
+
+##############
+#SIMPLE MODEL#
+##############
+
+# Define model
+
+model <- ' 
+
+# direct effects
+GHQTotal ~ AGE+SEX+C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20
+GHQTotal ~ c*mdepPRS_0.05
+GHQTotal ~ f*pdepPRS_0.05             
+
+# mediator
+depPRS_0.05 ~ 0.5*mdepPRS_0.05
+depPRS_0.05 ~ 0.5*pdepPRS_0.05
+GHQTotal ~ b*depPRS_0.05
+
+# indirect effects (a*b, d*b)
+ab := 0.5*b
+db := 0.5*b
+
+# total effects 
+total_mum := c + (0.5*b)
+total_dad := f + (0.5*b)
+
+# covariance
+mdepPRS_0.05 ~~ pdepPRS_0.05
+'
+
+# Fit the model
+fitM <- sem(model, data=data, se="bootstrap", estimator='ML')
+
+sem_model <- summary(fitM, standardized=TRUE, fit.measures=TRUE, ci=TRUE)
+sem_model_df <- as.data.frame(sem_model$PE)
+sem_model_final <- sem_model_df[sem_model_df$label != "", c(1:4,6:7,9:11)] #here we are extracting values of interest e.g. est, se, p, ci
+simple_model <- cbind(sem_model_final, AIC(fitM))
+
+write.csv(simple_model, "depPRS_GHQT_0.05_pa_m1_bs_nosib.csv", row.names=F, quote=F)
+
+################
+#EXTENDED MODEL#
+################
+
+rm(list=ls())
+
+data <- read.table("IGE_dep_pathway_df", header=T)
+data <- data[,-c(5,7,9, 40, 41)]
+data <- data[!duplicated(data$NFID),]
+data <- data[complete.cases(data),] #1400
+
+# Define model
+
+model <- '
+
+#direct effects
+GHQTotal ~ AGE+SEX+C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20
+GHQTotal ~ c*mdepPRS_0.05
+GHQTotal ~ f*pdepPRS_0.05         
+
+#mediator
+depPRS_0.05 ~ 0.5*mdepPRS_0.05
+depPRS_0.05 ~ 0.5*pdepPRS_0.05 
+
+GHQTotal ~ b*depPRS_0.05
+
+pGHQT_res ~ g*pdepPRS_0.05+pAGE
+mGHQT_res ~ h*mdepPRS_0.05+mAGE
+
+GHQTotal ~ i*pGHQT_res
+GHQTotal ~ j*mGHQT_res
+
+# indirect effects (a*b, d*b)
+ab := 0.5*b
+db := 0.5*b
+gi := g*i
+hj := h*j
+
+
+# total effects 
+total_mum := c + (0.5*b) + (h*j) ###### THIS IS WHAT I HAVE ADDED - NOT SURE IF ITS RIGHT THO #####
+total_dad := f + (0.5*b) + (g*i) ###### THIS IS WHAT I HAVE ADDED - NOT SURE IF ITS RIGHT THO #####
+
+# covariance
+mdepPRS_0.05 ~~ pdepPRS_0.05
+mGHQT_res ~~ pGHQT_res
+
+'
+
+# Fit the model
+fitM <- sem(model, data=data, se="bootstrap", estimator='ML')
+sem_model <- summary(fitM, standardized=TRUE, fit.measures=TRUE, ci=TRUE)
+sem_model_df <- as.data.frame(sem_model$PE)
+sem_model_final <- sem_model_df[sem_model_df$label != "", c(1:4,6:7,9:11)] #here we are extracting values of interest e.g. est, se, p, ci
+extended_model <- cbind(sem_model_final, AIC(fitM))
+
+write.csv(extended_model, "depPRS_GHQT_0.05_pa_m2_bs_nosib.csv", row.names=F, quote=F)
+
+#############################
+#EXTENDED (RESTRICTED) MODEL#
+#############################
+
+rm(list=ls())
+
+data <- read.table("IGE_dep_pathway_df", header=T)
+data <- data[,-c(5,7,9, 40, 41)]
+data <- data[!duplicated(data$NFID),]
+data <- data[complete.cases(data),] #1400
+
+# Define model
+
+model <- ' 
+
+#direct effects
+GHQTotal ~ AGE+SEX+C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20
+
+#mediator
+depPRS_0.05 ~ 0.5*mdepPRS_0.05
+depPRS_0.05 ~ 0.5*pdepPRS_0.05
+
+GHQTotal ~ b*depPRS_0.05
+
+pGHQT_res ~ g*pdepPRS_0.05+pAGE
+mGHQT_res ~ h*mdepPRS_0.05+mAGE
+
+GHQTotal ~ i*pGHQT_res
+GHQTotal ~ j*mGHQT_res
+
+# indirect effects (a*b, d*b)
+ab := 0.5*b
+db := 0.5*b
+gi := g*i
+hj := h*j
+
+
+# total effects 
+total_mum := (0.5*b) + (h*j) ###### THIS IS WHAT I HAVE ADDED - NOT SURE IF ITS RIGHT THO #####
+total_dad := (0.5*b) + (g*i) ###### THIS IS WHAT I HAVE ADDED - NOT SURE IF ITS RIGHT THO #####
+
+# covariance
+mdepPRS_0.05 ~~ pdepPRS_0.05
+mGHQT_res ~~ pGHQT_res
+'
+
+# Fit the model
+fitM <- sem(model, data=data, se="bootstrap", estimator='ML')
+sem_model <- summary(fitM, standardized=TRUE, fit.measures=TRUE, ci=TRUE)
+sem_model_df <- as.data.frame(sem_model$PE)
+sem_model_final <- sem_model_df[sem_model_df$label != "", c(1:4,6:7,9:11)] #here we are extracting values of interest e.g. est, se, p, ci
+extended_restricted_model <- cbind(sem_model_final, AIC(fitM))
+
+write.csv(extended_restricted_model, "depPRS_GHQT_0.05_pa_m3_bs_nosib.csv", row.names=F, quote=F)
+```
+
+### Maternal Only Duo Sample  
+
+Maternal Duo: GHQ Total  
+
+```{r, eval=FALSE}
+rm(list=ls())
+library(lavaan)
+
+data <- read.table("IGE_dep_pathway_df_matduo", header=T)
+data <- data[,-c(6,8,33)]
+data <- data[complete.cases(data),] #n=5198
+
+##############
+#SIMPLE MODEL#
+##############
+
+# Define model
+
+model <- ' 
+
+# direct effects
+GHQT ~ AGE+SEX+C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20
+GHQT ~ c*mdepPRS_0.05
+
+# mediator
+depPRS_0.05 ~ 0.5*mdepPRS_0.05
+GHQT ~ b*depPRS_0.05
+
+# indirect effects (a*b, d*b)
+ab := 0.5*b
+
+# total effects 
+total_mum := c + (0.5*b)
+
+'
+
+# Fit the model
+fitM <- sem(model, data=data, se="bootstrap", estimator='ML')
+
+sem_model <- summary(fitM, standardized=TRUE, fit.measures=TRUE, ci=TRUE)
+sem_model_df <- as.data.frame(sem_model$PE)
+sem_model_final <- sem_model_df[sem_model_df$label != "", c(1:4,6:7,9:11)] #here we are extracting values of interest e.g. est, se, p, ci
+simple_model <- cbind(sem_model_final, AIC(fitM))
+
+write.csv(simple_model, "depPRS_GHQT_0.05_pa_m1_bs_matduo.csv", row.names=F, quote=F)
+
+################
+#EXTENDED MODEL#
+################
+
+rm(list=ls())
+data <- read.table("IGE_dep_pathway_df_matduo", header=T)
+data <- data[,-c(6,8,33)]
+data <- data[complete.cases(data),] #n=5198
+
+
+# Define model
+
+model <- '
+
+#direct effects
+GHQT ~ AGE+SEX+C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20
+GHQT ~ c*mdepPRS_0.05
+       
+
+#mediator
+depPRS_0.05 ~ 0.5*mdepPRS_0.05
+GHQT ~ b*depPRS_0.05
+mGHQT_res ~ h*mdepPRS_0.05+mAGE
+GHQT ~ j*mGHQT_res
+
+# indirect effects (a*b, d*b)
+ab := 0.5*b
+hj := h*j
+
+
+# total effects 
+total_mum := c + (0.5*b) + (h*j) ###### THIS IS WHAT I HAVE ADDED - NOT SURE IF ITS RIGHT THO #####
+
+'
+
+# Fit the model
+fitM <- sem(model, data=data, se="bootstrap", estimator='ML')
+sem_model <- summary(fitM, standardized=TRUE, fit.measures=TRUE, ci=TRUE)
+sem_model_df <- as.data.frame(sem_model$PE)
+sem_model_final <- sem_model_df[sem_model_df$label != "", c(1:4,6:7,9:11)] #here we are extracting values of interest e.g. est, se, p, ci
+extended_model <- cbind(sem_model_final, AIC(fitM))
+
+write.csv(extended_model, "depPRS_GHQT_0.05_pa_m2_bs_matduo.csv", row.names=F, quote=F)
+
+#############################
+#EXTENDED (RESTRICTED) MODEL#
+#############################
+
+rm(list=ls())
+data <- read.table("IGE_dep_pathway_df_matduo", header=T)
+data <- data[,-c(6,8,33)]
+data <- data[complete.cases(data),] #n=5198
+
+
+# Define model
+
+model <- ' 
+
+#direct effects
+GHQT ~ AGE+SEX+C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20
+
+#mediator
+depPRS_0.05 ~ 0.5*mdepPRS_0.05
+GHQT ~ b*depPRS_0.05
+mGHQT_res ~ h*mdepPRS_0.05+mAGE
+GHQT ~ j*mGHQT_res
+
+# indirect effects (a*b, d*b)
+ab := 0.5*b
+hj := h*j
+
+
+# total effects 
+total_mum := (0.5*b) + (h*j) ###### THIS IS WHAT I HAVE ADDED - NOT SURE IF ITS RIGHT THO #####
+'
+
+# Fit the model
+fitM <- sem(model, data=data, se="bootstrap", estimator='ML')
+sem_model <- summary(fitM, standardized=TRUE, fit.measures=TRUE, ci=TRUE)
+sem_model_df <- as.data.frame(sem_model$PE)
+sem_model_final <- sem_model_df[sem_model_df$label != "", c(1:4,6:7,9:11)] #here we are extracting values of interest e.g. est, se, p, ci
+extended_restricted_model <- cbind(sem_model_final, AIC(fitM))
+
+write.csv(extended_restricted_model, "depPRS_GHQT_0.05_pa_m3_bs_matduo.csv", row.names=F, quote=F)
+```
+
+### Paternal Only Duo Sample  
+
+Paternal Duo: GHQ Total  
+
+```{r, eval=FALSE}
+
+rm(list=ls())
+library(lavaan)
+
+data <- read.table("IGE_dep_pathway_df_patduo", header=T)
+data <- data[,-c(6,8,33)]
+data <- data[complete.cases(data),] #n=3403
+
+##############
+#SIMPLE MODEL#
+##############
+
+# Define model
+
+model <- ' 
+
+# direct effects
+GHQT ~ AGE+SEX+C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20
+GHQT ~ f*pdepPRS_0.05             
+
+# mediator
+depPRS_0.05 ~ 0.5*pdepPRS_0.05
+GHQT ~ b*depPRS_0.05
+
+# indirect effects (a*b, d*b)
+db := 0.5*b
+
+# total effects 
+
+total_dad := f + (0.5*b)
+
+'
+
+# Fit the model
+fitM <- sem(model, data=data, se="bootstrap", estimator='ML')
+
+sem_model <- summary(fitM, standardized=TRUE, fit.measures=TRUE, ci=TRUE)
+sem_model_df <- as.data.frame(sem_model$PE)
+sem_model_final <- sem_model_df[sem_model_df$label != "", c(1:4,6:7,9:11)] #here we are extracting values of interest e.g. est, se, p, ci
+simple_model <- cbind(sem_model_final, AIC(fitM))
+
+write.csv(simple_model, "depPRS_GHQT_0.05_pa_m1_bs_patduo.csv", row.names=F, quote=F)
+
+################
+#EXTENDED MODEL#
+################
+
+rm(list=ls())
+data <- read.table("IGE_dep_pathway_df_patduo", header=T)
+data <- data[,-c(6,8,33)]
+data <- data[complete.cases(data),] #n=3403
+
+# Define model
+
+model <- '
+
+#direct effects
+GHQT ~ AGE+SEX+C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20
+GHQT ~ f*pdepPRS_0.05         
+
+#mediator
+depPRS_0.05 ~ 0.5*pdepPRS_0.05 
+GHQT ~ b*depPRS_0.05
+pGHQT_res ~ g*pdepPRS_0.05+pAGE
+GHQT ~ i*pGHQT_res
+
+
+# indirect effects (a*b, d*b)
+db := 0.5*b
+gi := g*i
+
+
+
+# total effects 
+total_dad := f + (0.5*b) + (g*i) ###### THIS IS WHAT I HAVE ADDED - NOT SURE IF ITS RIGHT THO #####
+
+'
+
+# Fit the model
+fitM <- sem(model, data=data, se="bootstrap", estimator='ML')
+sem_model <- summary(fitM, standardized=TRUE, fit.measures=TRUE, ci=TRUE)
+sem_model_df <- as.data.frame(sem_model$PE)
+sem_model_final <- sem_model_df[sem_model_df$label != "", c(1:4,6:7,9:11)] #here we are extracting values of interest e.g. est, se, p, ci
+extended_model <- cbind(sem_model_final, AIC(fitM))
+
+write.csv(extended_model, "depPRS_GHQT_0.05_pa_m2_bs_patduo.csv", row.names=F, quote=F)
+
+#############################
+#EXTENDED (RESTRICTED) MODEL#
+#############################
+
+rm(list=ls())
+data <- read.table("IGE_dep_pathway_df_patduo", header=T)
+data <- data[,-c(6,8,33)]
+data <- data[complete.cases(data),] #n=3403
+
+# Define model
+
+model <- ' 
+
+#direct effects
+GHQT ~ AGE+SEX+C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20
+
+#mediator
+depPRS_0.05 ~ 0.5*pdepPRS_0.05
+GHQT ~ b*depPRS_0.05
+pGHQT_res ~ g*pdepPRS_0.05+pAGE
+GHQT ~ i*pGHQT_res
+
+# indirect effects (a*b, d*b)
+db := 0.5*b
+gi := g*i
+
+
+
+# total effects 
+total_dad := (0.5*b) + (g*i) ###### THIS IS WHAT I HAVE ADDED - NOT SURE IF ITS RIGHT THO #####
+
+'
+
+# Fit the model
+fitM <- sem(model, data=data, se="bootstrap", estimator='ML')
+sem_model <- summary(fitM, standardized=TRUE, fit.measures=TRUE, ci=TRUE)
+sem_model_df <- as.data.frame(sem_model$PE)
+sem_model_final <- sem_model_df[sem_model_df$label != "", c(1:4,6:7,9:11)] #here we are extracting values of interest e.g. est, se, p, ci
+extended_restricted_model <- cbind(sem_model_final, AIC(fitM))
+
+write.csv(extended_restricted_model, "depPRS_GHQT_0.05_pa_m3_bs_patduo.csv", row.names=F, quote=F)
+```
+
+## GHQ Depression {.tabset}  
+
+### Path a,d Restricted  
+
+```{r, eval=FALSE}
+
+rm(list=ls())
+library(lavaan)
+
+data <- read.table("IGE_dep_pathway_df", header=T)
+data <- data[,-c(6, 8, 10, 38,39)]
+data <- data[complete.cases(data),] #n=2280
+
+##############
+#SIMPLE MODEL#
+##############
+
+# Define model
+
+model <- ' 
+
+# direct effects
+GHQDepression ~ AGE+SEX+C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20
+GHQDepression ~ c*mdepPRS_0.05
+GHQDepression ~ f*pdepPRS_0.05             
+
+# mediator
+depPRS_0.05 ~ 0.5*mdepPRS_0.05
+depPRS_0.05 ~ 0.5*pdepPRS_0.05
+GHQDepression ~ b*depPRS_0.05
+
+# indirect effects (a*b, d*b)
+ab := 0.5*b
+db := 0.5*b
+
+# total effects 
+total_mum := c + (0.5*b)
+total_dad := f + (0.5*b)
+
+# covariance
+mdepPRS_0.05 ~~ pdepPRS_0.05
+'
+
+# Fit the model
+fitM <- sem(model, data=data, se="bootstrap", estimator='ML')
+
+sem_model <- summary(fitM, standardized=TRUE, fit.measures=TRUE, ci=TRUE)
+sem_model_df <- as.data.frame(sem_model$PE)
+sem_model_final <- sem_model_df[sem_model_df$label != "", c(1:4,6:7,9:11)] #here we are extracting values of interest e.g. est, se, p, ci
+simple_model <- cbind(sem_model_final, AIC(fitM))
+
+write.csv(simple_model, "depPRS_GHQD_0.05_pa_m1_bs.csv", row.names=F, quote=F)
+
+################
+#EXTENDED MODEL#
+################
+
+rm(list=ls())
+data <- read.table("IGE_dep_pathway_df", header=T)
+data <- data[,-c(6, 8, 10, 38, 39)]
+data <- data[complete.cases(data),] #n=2280
+
+# Define model
+
+model <- '
+
+#direct effects
+GHQDepression ~ AGE+SEX+C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20
+GHQDepression ~ c*mdepPRS_0.05
+GHQDepression ~ f*pdepPRS_0.05         
+
+#mediator
+depPRS_0.05 ~ 0.5*mdepPRS_0.05
+depPRS_0.05 ~ 0.5*pdepPRS_0.05 
+
+GHQDepression ~ b*depPRS_0.05
+
+pGHQD_res ~ g*pdepPRS_0.05+pAGE
+mGHQD_res ~ h*mdepPRS_0.05+mAGE
+
+GHQDepression ~ i*pGHQD_res
+GHQDepression ~ j*mGHQD_res
+
+# indirect effects (a*b, d*b)
+ab := 0.5*b
+db := 0.5*b
+gi := g*i
+hj := h*j
+
+
+# total effects 
+total_mum := c + (0.5*b) + (h*j) ###### THIS IS WHAT I HAVE ADDED - NOT SURE IF ITS RIGHT THO #####
+total_dad := f + (0.5*b) + (g*i) ###### THIS IS WHAT I HAVE ADDED - NOT SURE IF ITS RIGHT THO #####
+
+# covariance
+mdepPRS_0.05 ~~ pdepPRS_0.05
+mGHQD_res ~~ pGHQD_res
+
+'
+
+# Fit the model
+fitM <- sem(model, data=data, se="bootstrap", estimator='ML')
+sem_model <- summary(fitM, standardized=TRUE, fit.measures=TRUE, ci=TRUE)
+sem_model_df <- as.data.frame(sem_model$PE)
+sem_model_final <- sem_model_df[sem_model_df$label != "", c(1:4,6:7,9:11)] #here we are extracting values of interest e.g. est, se, p, ci
+extended_model <- cbind(sem_model_final, AIC(fitM))
+
+write.csv(extended_model, "depPRS_GHQD_0.05_pa_m2_bs.csv", row.names=F, quote=F)
+
+#############################
+#EXTENDED (RESTRICTED) MODEL#
+#############################
+
+rm(list=ls())
+data <- read.table("IGE_dep_pathway_df", header=T)
+data <- data[,-c(6, 8, 10, 38, 39)]
+data <- data[complete.cases(data),] #n=2280
+
+# Define model
+
+model <- ' 
+
+#direct effects
+GHQDepression ~ AGE+SEX+C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20
+
+#mediator
+depPRS_0.05 ~ 0.5*mdepPRS_0.05
+depPRS_0.05 ~ 0.5*pdepPRS_0.05
+
+GHQDepression ~ b*depPRS_0.05
+
+pGHQD_res ~ g*pdepPRS_0.05+pAGE
+mGHQD_res ~ h*mdepPRS_0.05+mAGE
+
+GHQDepression ~ i*pGHQD_res
+GHQDepression ~ j*mGHQD_res
+
+# indirect effects (a*b, d*b)
+ab := 0.5*b
+db := 0.5*b
+gi := g*i
+hj := h*j
+
+
+# total effects 
+total_mum := (0.5*b) + (h*j) ###### THIS IS WHAT I HAVE ADDED - NOT SURE IF ITS RIGHT THO #####
+total_dad := (0.5*b) + (g*i) ###### THIS IS WHAT I HAVE ADDED - NOT SURE IF ITS RIGHT THO #####
+
+# covariance
+mdepPRS_0.05 ~~ pdepPRS_0.05
+mGHQD_res ~~ pGHQD_res
+'
+
+# Fit the model
+fitM <- sem(model, data=data, se="bootstrap", estimator='ML')
+sem_model <- summary(fitM, standardized=TRUE, fit.measures=TRUE, ci=TRUE)
+sem_model_df <- as.data.frame(sem_model$PE)
+sem_model_final <- sem_model_df[sem_model_df$label != "", c(1:4,6:7,9:11)] #here we are extracting values of interest e.g. est, se, p, ci
+extended_restricted_model <- cbind(sem_model_final, AIC(fitM))
+
+write.csv(extended_restricted_model, "depPRS_GHQD_0.05_pa_m3_bs.csv", row.names=F, quote=F)
+```
+
+![.](./DepressionResults/Slide11.PNG)
+
+### All Paths Freely Estimated  
+
+```{r, eval=FALSE}
+
+rm(list=ls())
+library(lavaan)
+
+data <- read.table("IGE_dep_pathway_df", header=T)
+data <- data[,-c(6, 8, 10, 38, 39)]
+data <- data[complete.cases(data),] #n=2280
+
+##############
+#SIMPLE MODEL#
+##############
+
+# Define model
+
+model <- ' 
+
+# direct effects
+GHQDepression ~ AGE+SEX+C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20
+GHQDepression ~ c*mdepPRS_0.05
+GHQDepression ~ f*pdepPRS_0.05             
+
+# mediator
+depPRS_0.05 ~ a*mdepPRS_0.05
+depPRS_0.05 ~ d*pdepPRS_0.05
+GHQDepression ~ b*depPRS_0.05
+
+# indirect effects (a*b, d*b)
+ab := a*b
+db := d*b
+
+# total effects 
+total_mum := c + (a*b)
+total_dad := f + (d*b)
+
+# covariance
+mdepPRS_0.05 ~~ pdepPRS_0.05
+'
+
+# Fit the model
+fitM <- sem(model, data=data, se="bootstrap", estimator='ML')
+
+sem_model <- summary(fitM, standardized=TRUE, fit.measures=TRUE, ci=TRUE)
+sem_model_df <- as.data.frame(sem_model$PE)
+sem_model_final <- sem_model_df[sem_model_df$label != "", c(1:4,6:7,9:11)] #here we are extracting values of interest e.g. est, se, p, ci
+simple_model <- cbind(sem_model_final, AIC(fitM))
+
+write.csv(simple_model, "depPRS_GHQD_0.05_pa_m1_bs_fm.csv", row.names=F, quote=F)
+
+################
+#EXTENDED MODEL#
+################
+
+rm(list=ls())
+data <- read.table("IGE_dep_pathway_df", header=T)
+data <- data[,-c(6, 8, 10, 38, 39)]
+data <- data[complete.cases(data),] #n=2280
+
+# Define model
+
+model <- '
+
+#direct effects
+GHQDepression ~ AGE+SEX+C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20
+GHQDepression ~ c*mdepPRS_0.05
+GHQDepression ~ f*pdepPRS_0.05         
+
+#mediator
+depPRS_0.05 ~ a*mdepPRS_0.05
+depPRS_0.05 ~ d*pdepPRS_0.05 
+
+GHQDepression ~ b*depPRS_0.05
+
+pGHQD_res ~ g*pdepPRS_0.05+pAGE
+mGHQD_res ~ h*mdepPRS_0.05+mAGE
+
+GHQDepression ~ i*pGHQD_res
+GHQDepression ~ j*mGHQD_res
+
+# indirect effects (a*b, d*b)
+ab := a*b
+db := d*b
+gi := g*i
+hj := h*j
+
+
+# total effects 
+total_mum := c + (a*b) + (h*j) ###### THIS IS WHAT I HAVE ADDED - NOT SURE IF ITS RIGHT THO #####
+total_dad := f + (d*b) + (g*i) ###### THIS IS WHAT I HAVE ADDED - NOT SURE IF ITS RIGHT THO #####
+
+# covariance
+mdepPRS_0.05 ~~ pdepPRS_0.05
+mGHQD_res ~~ pGHQD_res
+
+'
+
+# Fit the model
+fitM <- sem(model, data=data, se="bootstrap", estimator='ML')
+sem_model <- summary(fitM, standardized=TRUE, fit.measures=TRUE, ci=TRUE)
+sem_model_df <- as.data.frame(sem_model$PE)
+sem_model_final <- sem_model_df[sem_model_df$label != "", c(1:4,6:7,9:11)] #here we are extracting values of interest e.g. est, se, p, ci
+extended_model <- cbind(sem_model_final, AIC(fitM))
+
+write.csv(extended_model, "depPRS_GHQD_0.05_pa_m2_bs_fm.csv", row.names=F, quote=F)
+
+#############################
+#EXTENDED (RESTRICTED) MODEL#
+#############################
+
+rm(list=ls())
+data <- read.table("IGE_dep_pathway_df", header=T)
+data <- data[,-c(6, 8, 10, 38, 39)]
+data <- data[complete.cases(data),] #n=2280
+
+# Define model
+
+model <- ' 
+
+#direct effects
+GHQDepression ~ AGE+SEX+C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20
+
+#mediator
+depPRS_0.05 ~ a*mdepPRS_0.05
+depPRS_0.05 ~ d*pdepPRS_0.05
+
+GHQDepression ~ b*depPRS_0.05
+
+pGHQD_res ~ g*pdepPRS_0.05+pAGE
+mGHQD_res ~ h*mdepPRS_0.05+mAGE
+
+GHQDepression ~ i*pGHQD_res
+GHQDepression ~ j*mGHQD_res
+
+# indirect effects (a*b, d*b)
+ab := a*b
+db := d*b
+gi := g*i
+hj := h*j
+
+
+# total effects 
+total_mum := (a*b) + (h*j) ###### THIS IS WHAT I HAVE ADDED - NOT SURE IF ITS RIGHT THO #####
+total_dad := (d*b) + (g*i) ###### THIS IS WHAT I HAVE ADDED - NOT SURE IF ITS RIGHT THO #####
+
+# covariance
+mdepPRS_0.05 ~~ pdepPRS_0.05
+mGHQD_res ~~ pGHQD_res
+'
+
+# Fit the model
+fitM <- sem(model, data=data, se="bootstrap", estimator='ML')
+sem_model <- summary(fitM, standardized=TRUE, fit.measures=TRUE, ci=TRUE)
+sem_model_df <- as.data.frame(sem_model$PE)
+sem_model_final <- sem_model_df[sem_model_df$label != "", c(1:4,6:7,9:11)] #here we are extracting values of interest e.g. est, se, p, ci
+extended_restricted_model <- cbind(sem_model_final, AIC(fitM))
+
+write.csv(extended_restricted_model, "depPRS_GHQD_0.05_pa_m3_bs_fm.csv", row.names=F, quote=F)
+```
+
+### Female Only Sample  
+
+```{r, eval=FALSE}
+
+rm(list=ls())
+library(lavaan)
+
+data <- read.table("IGE_dep_pathway_df", header=T)
+data <- data[,-c(6, 8, 10, 38, 39)]
+data <- subset(data, data$SEX=="F")
+data <- data[complete.cases(data),] #n=1293
+
+##############
+#SIMPLE MODEL#
+##############
+
+# Define model
+
+model <- ' 
+
+# direct effects
+GHQDepression ~ AGE+C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20
+GHQDepression ~ c*mdepPRS_0.05
+GHQDepression ~ f*pdepPRS_0.05             
+
+# mediator
+depPRS_0.05 ~ 0.5*mdepPRS_0.05
+depPRS_0.05 ~ 0.5*pdepPRS_0.05
+GHQDepression ~ b*depPRS_0.05
+
+# indirect effects (a*b, d*b)
+ab := 0.5*b
+db := 0.5*b
+
+# total effects 
+total_mum := c + (0.5*b)
+total_dad := f + (0.5*b)
+
+# covariance
+mdepPRS_0.05 ~~ pdepPRS_0.05
+'
+
+# Fit the model
+fitM <- sem(model, data=data, se="bootstrap", estimator='ML')
+
+sem_model <- summary(fitM, standardized=TRUE, fit.measures=TRUE, ci=TRUE)
+sem_model_df <- as.data.frame(sem_model$PE)
+sem_model_final <- sem_model_df[sem_model_df$label != "", c(1:4,6:7,9:11)] #here we are extracting values of interest e.g. est, se, p, ci
+simple_model <- cbind(sem_model_final, AIC(fitM))
+
+write.csv(simple_model, "depPRS_GHQD_0.05_pa_m1_bs_FEMALE.csv", row.names=F, quote=F)
+
+################
+#EXTENDED MODEL#
+################
+
+rm(list=ls())
+data <- read.table("IGE_dep_pathway_df", header=T)
+data <- data[,-c(6, 8, 10, 38, 39)]
+data <- subset(data, data$SEX=="F")
+data <- data[complete.cases(data),] #n=1293
+
+
+# Define model
+
+model <- '
+
+#direct effects
+GHQDepression ~ AGE+C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20
+GHQDepression ~ c*mdepPRS_0.05
+GHQDepression ~ f*pdepPRS_0.05         
+
+#mediator
+depPRS_0.05 ~ 0.5*mdepPRS_0.05
+depPRS_0.05 ~ 0.5*pdepPRS_0.05 
+
+GHQDepression ~ b*depPRS_0.05
+
+pGHQD_res ~ g*pdepPRS_0.05+pAGE
+mGHQD_res ~ h*mdepPRS_0.05+mAGE
+
+GHQDepression ~ i*pGHQD_res
+GHQDepression ~ j*mGHQD_res
+
+# indirect effects (a*b, d*b)
+ab := 0.5*b
+db := 0.5*b
+gi := g*i
+hj := h*j
+
+
+# total effects 
+total_mum := c + (0.5*b) + (h*j) ###### THIS IS WHAT I HAVE ADDED - NOT SURE IF ITS RIGHT THO #####
+total_dad := f + (0.5*b) + (g*i) ###### THIS IS WHAT I HAVE ADDED - NOT SURE IF ITS RIGHT THO #####
+
+# covariance
+mdepPRS_0.05 ~~ pdepPRS_0.05
+mGHQD_res ~~ pGHQD_res
+
+'
+
+# Fit the model
+fitM <- sem(model, data=data, se="bootstrap", estimator='ML')
+sem_model <- summary(fitM, standardized=TRUE, fit.measures=TRUE, ci=TRUE)
+sem_model_df <- as.data.frame(sem_model$PE)
+sem_model_final <- sem_model_df[sem_model_df$label != "", c(1:4,6:7,9:11)] #here we are extracting values of interest e.g. est, se, p, ci
+extended_model <- cbind(sem_model_final, AIC(fitM))
+
+write.csv(extended_model, "depPRS_GHQD_0.05_pa_m2_bs_FEMALE.csv", row.names=F, quote=F)
+
+#############################
+#EXTENDED (RESTRICTED) MODEL#
+#############################
+
+rm(list=ls())
+data <- read.table("IGE_dep_pathway_df", header=T)
+data <- data[,-c(6, 8, 10, 38, 39)]
+data <- subset(data, data$SEX=="F")
+data <- data[complete.cases(data),] #n=1293
+
+
+# Define model
+
+model <- ' 
+
+#direct effects
+GHQDepression ~ AGE+C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20
+
+#mediator
+depPRS_0.05 ~ 0.5*mdepPRS_0.05
+depPRS_0.05 ~ 0.5*pdepPRS_0.05
+
+GHQDepression ~ b*depPRS_0.05
+
+pGHQD_res ~ g*pdepPRS_0.05+pAGE
+mGHQD_res ~ h*mdepPRS_0.05+mAGE
+
+GHQDepression ~ i*pGHQD_res
+GHQDepression ~ j*mGHQD_res
+
+# indirect effects (a*b, d*b)
+ab := 0.5*b
+db := 0.5*b
+gi := g*i
+hj := h*j
+
+
+# total effects 
+total_mum := (0.5*b) + (h*j) ###### THIS IS WHAT I HAVE ADDED - NOT SURE IF ITS RIGHT THO #####
+total_dad := (0.5*b) + (g*i) ###### THIS IS WHAT I HAVE ADDED - NOT SURE IF ITS RIGHT THO #####
+
+# covariance
+mdepPRS_0.05 ~~ pdepPRS_0.05
+mGHQD_res ~~ pGHQD_res
+'
+
+# Fit the model
+fitM <- sem(model, data=data, se="bootstrap", estimator='ML')
+sem_model <- summary(fitM, standardized=TRUE, fit.measures=TRUE, ci=TRUE)
+sem_model_df <- as.data.frame(sem_model$PE)
+sem_model_final <- sem_model_df[sem_model_df$label != "", c(1:4,6:7,9:11)] #here we are extracting values of interest e.g. est, se, p, ci
+extended_restricted_model <- cbind(sem_model_final, AIC(fitM))
+
+write.csv(extended_restricted_model, "depPRS_GHQD_0.05_pa_m3_bs_FEMALE.csv", row.names=F, quote=F)
+```
+
+### Male Only Sample  
+
+```{r, eval=FALSE}
+
+rm(list=ls())
+library(lavaan)
+
+data <- read.table("IGE_dep_pathway_df", header=T)
+data <- data[,-c(6, 8, 10, 38, 39)]
+data <- subset(data, data$SEX=="M")
+data <- data[complete.cases(data),] #n=987
+
+##############
+#SIMPLE MODEL#
+##############
+
+# Define model
+
+model <- ' 
+
+# direct effects
+GHQDepression ~ AGE+C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20
+GHQDepression ~ c*mdepPRS_0.05
+GHQDepression ~ f*pdepPRS_0.05             
+
+# mediator
+depPRS_0.05 ~ 0.5*mdepPRS_0.05
+depPRS_0.05 ~ 0.5*pdepPRS_0.05
+GHQDepression ~ b*depPRS_0.05
+
+# indirect effects (a*b, d*b)
+ab := 0.5*b
+db := 0.5*b
+
+# total effects 
+total_mum := c + (0.5*b)
+total_dad := f + (0.5*b)
+
+# covariance
+mdepPRS_0.05 ~~ pdepPRS_0.05
+'
+
+# Fit the model
+fitM <- sem(model, data=data, se="bootstrap", estimator='ML')
+
+sem_model <- summary(fitM, standardized=TRUE, fit.measures=TRUE, ci=TRUE)
+sem_model_df <- as.data.frame(sem_model$PE)
+sem_model_final <- sem_model_df[sem_model_df$label != "", c(1:4,6:7,9:11)] #here we are extracting values of interest e.g. est, se, p, ci
+simple_model <- cbind(sem_model_final, AIC(fitM))
+
+write.csv(simple_model, "depPRS_GHQD_0.05_pa_m1_bs_MALE.csv", row.names=F, quote=F)
+
+################
+#EXTENDED MODEL#
+################
+
+rm(list=ls())
+data <- read.table("IGE_dep_pathway_df", header=T)
+data <- data[,-c(6, 8, 10, 38, 39)]
+data <- subset(data, data$SEX=="M")
+data <- data[complete.cases(data),] #n=987
+
+
+# Define model
+
+model <- '
+
+#direct effects
+GHQDepression ~ AGE+C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20
+GHQDepression ~ c*mdepPRS_0.05
+GHQDepression ~ f*pdepPRS_0.05         
+
+#mediator
+depPRS_0.05 ~ 0.5*mdepPRS_0.05
+depPRS_0.05 ~ 0.5*pdepPRS_0.05 
+
+GHQDepression ~ b*depPRS_0.05
+
+pGHQD_res ~ g*pdepPRS_0.05+pAGE
+mGHQD_res ~ h*mdepPRS_0.05+mAGE
+
+GHQDepression ~ i*pGHQD_res
+GHQDepression ~ j*mGHQD_res
+
+# indirect effects (a*b, d*b)
+ab := 0.5*b
+db := 0.5*b
+gi := g*i
+hj := h*j
+
+
+# total effects 
+total_mum := c + (0.5*b) + (h*j) ###### THIS IS WHAT I HAVE ADDED - NOT SURE IF ITS RIGHT THO #####
+total_dad := f + (0.5*b) + (g*i) ###### THIS IS WHAT I HAVE ADDED - NOT SURE IF ITS RIGHT THO #####
+
+# covariance
+mdepPRS_0.05 ~~ pdepPRS_0.05
+mGHQD_res ~~ pGHQD_res
+
+'
+
+# Fit the model
+fitM <- sem(model, data=data, se="bootstrap", estimator='ML')
+sem_model <- summary(fitM, standardized=TRUE, fit.measures=TRUE, ci=TRUE)
+sem_model_df <- as.data.frame(sem_model$PE)
+sem_model_final <- sem_model_df[sem_model_df$label != "", c(1:4,6:7,9:11)] #here we are extracting values of interest e.g. est, se, p, ci
+extended_model <- cbind(sem_model_final, AIC(fitM))
+
+write.csv(extended_model, "depPRS_GHQD_0.05_pa_m2_bs_MALE.csv", row.names=F, quote=F)
+
+#############################
+#EXTENDED (RESTRICTED) MODEL#
+#############################
+
+rm(list=ls())
+data <- read.table("IGE_dep_pathway_df", header=T)
+data <- data[,-c(6, 8, 10, 38, 39)]
+data <- subset(data, data$SEX=="M")
+data <- data[complete.cases(data),] #n=987
+
+
+# Define model
+
+model <- ' 
+
+#direct effects
+GHQDepression ~ AGE+C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20
+
+#mediator
+depPRS_0.05 ~ 0.5*mdepPRS_0.05
+depPRS_0.05 ~ 0.5*pdepPRS_0.05
+
+GHQDepression ~ b*depPRS_0.05
+
+pGHQD_res ~ g*pdepPRS_0.05+pAGE
+mGHQD_res ~ h*mdepPRS_0.05+mAGE
+
+GHQDepression ~ i*pGHQD_res
+GHQDepression ~ j*mGHQD_res
+
+# indirect effects (a*b, d*b)
+ab := 0.5*b
+db := 0.5*b
+gi := g*i
+hj := h*j
+
+
+# total effects 
+total_mum := (0.5*b) + (h*j) ###### THIS IS WHAT I HAVE ADDED - NOT SURE IF ITS RIGHT THO #####
+total_dad := (0.5*b) + (g*i) ###### THIS IS WHAT I HAVE ADDED - NOT SURE IF ITS RIGHT THO #####
+
+# covariance
+mdepPRS_0.05 ~~ pdepPRS_0.05
+mGHQD_res ~~ pGHQD_res
+'
+
+# Fit the model
+fitM <- sem(model, data=data, se="bootstrap", estimator='ML')
+sem_model <- summary(fitM, standardized=TRUE, fit.measures=TRUE, ci=TRUE)
+sem_model_df <- as.data.frame(sem_model$PE)
+sem_model_final <- sem_model_df[sem_model_df$label != "", c(1:4,6:7,9:11)] #here we are extracting values of interest e.g. est, se, p, ci
+extended_restricted_model <- cbind(sem_model_final, AIC(fitM))
+
+write.csv(extended_restricted_model, "depPRS_GHQD_0.05_pa_m3_bs_MALE.csv", row.names=F, quote=F)
+```
+
+### Singleton Sample  
+
+```{r, eval=FALSE}
+library(lavaan)
+library(dplyr)
+
+rm(list=ls())
+data <- read.table("IGE_dep_pathway_df", header=T)
+data <- data[,-c(6, 8, 10, 38,39)]
+data <- data[!duplicated(data$NFID),]
+data <- data[complete.cases(data),] #n=1377
+
+
+
+##############
+#SIMPLE MODEL#
+##############
+
+# Define model
+
+model <- ' 
+
+# direct effects
+GHQDepression ~ AGE+SEX+C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20
+GHQDepression ~ c*mdepPRS_0.05
+GHQDepression ~ f*pdepPRS_0.05             
+
+# mediator
+depPRS_0.05 ~ 0.5*mdepPRS_0.05
+depPRS_0.05 ~ 0.5*pdepPRS_0.05
+GHQDepression ~ b*depPRS_0.05
+
+# indirect effects (a*b, d*b)
+ab := 0.5*b
+db := 0.5*b
+
+# total effects 
+total_mum := c + (0.5*b)
+total_dad := f + (0.5*b)
+
+# covariance
+mdepPRS_0.05 ~~ pdepPRS_0.05
+'
+
+# Fit the model
+fitM <- sem(model, data=data, se="bootstrap", estimator='ML')
+
+sem_model <- summary(fitM, standardized=TRUE, fit.measures=TRUE, ci=TRUE)
+sem_model_df <- as.data.frame(sem_model$PE)
+sem_model_final <- sem_model_df[sem_model_df$label != "", c(1:4,6:7,9:11)] #here we are extracting values of interest e.g. est, se, p, ci
+simple_model <- cbind(sem_model_final, AIC(fitM))
+
+write.csv(simple_model, "depPRS_GHQD_0.05_pa_m1_bs_nosib.csv", row.names=F, quote=F)
+
+################
+#EXTENDED MODEL#
+################
+
+rm(list=ls())
+data <- read.table("IGE_dep_pathway_df", header=T)
+data <- data[,-c(6, 8, 10, 38,39)]
+data <- data[!duplicated(data$NFID),]
+data <- data[complete.cases(data),] #n=1377
+
+# Define model
+
+model <- '
+
+#direct effects
+GHQDepression ~ AGE+SEX+C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20
+GHQDepression ~ c*mdepPRS_0.05
+GHQDepression ~ f*pdepPRS_0.05         
+
+#mediator
+depPRS_0.05 ~ 0.5*mdepPRS_0.05
+depPRS_0.05 ~ 0.5*pdepPRS_0.05 
+
+GHQDepression ~ b*depPRS_0.05
+
+pGHQD_res ~ g*pdepPRS_0.05+pAGE
+mGHQD_res ~ h*mdepPRS_0.05+mAGE
+
+GHQDepression ~ i*pGHQD_res
+GHQDepression ~ j*mGHQD_res
+
+# indirect effects (a*b, d*b)
+ab := 0.5*b
+db := 0.5*b
+gi := g*i
+hj := h*j
+
+
+# total effects 
+total_mum := c + (0.5*b) + (h*j) ###### THIS IS WHAT I HAVE ADDED - NOT SURE IF ITS RIGHT THO #####
+total_dad := f + (0.5*b) + (g*i) ###### THIS IS WHAT I HAVE ADDED - NOT SURE IF ITS RIGHT THO #####
+
+# covariance
+mdepPRS_0.05 ~~ pdepPRS_0.05
+mGHQD_res ~~ pGHQD_res
+
+'
+
+# Fit the model
+fitM <- sem(model, data=data, se="bootstrap", estimator='ML')
+sem_model <- summary(fitM, standardized=TRUE, fit.measures=TRUE, ci=TRUE)
+sem_model_df <- as.data.frame(sem_model$PE)
+sem_model_final <- sem_model_df[sem_model_df$label != "", c(1:4,6:7,9:11)] #here we are extracting values of interest e.g. est, se, p, ci
+extended_model <- cbind(sem_model_final, AIC(fitM))
+
+write.csv(extended_model, "depPRS_GHQD_0.05_pa_m2_bs_nosib.csv", row.names=F, quote=F)
+
+#############################
+#EXTENDED (RESTRICTED) MODEL#
+#############################
+
+rm(list=ls())
+data <- read.table("IGE_dep_pathway_df", header=T)
+data <- data[,-c(6, 8, 10, 38,39)]
+data <- data[!duplicated(data$NFID),]
+data <- data[complete.cases(data),] #n=1377
+
+# Define model
+
+model <- ' 
+
+#direct effects
+GHQDepression ~ AGE+SEX+C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20
+
+#mediator
+depPRS_0.05 ~ 0.5*mdepPRS_0.05
+depPRS_0.05 ~ 0.5*pdepPRS_0.05
+
+GHQDepression ~ b*depPRS_0.05
+
+pGHQD_res ~ g*pdepPRS_0.05+pAGE
+mGHQD_res ~ h*mdepPRS_0.05+mAGE
+
+GHQDepression ~ i*pGHQD_res
+GHQDepression ~ j*mGHQD_res
+
+# indirect effects (a*b, d*b)
+ab := 0.5*b
+db := 0.5*b
+gi := g*i
+hj := h*j
+
+
+# total effects 
+total_mum := (0.5*b) + (h*j) ###### THIS IS WHAT I HAVE ADDED - NOT SURE IF ITS RIGHT THO #####
+total_dad := (0.5*b) + (g*i) ###### THIS IS WHAT I HAVE ADDED - NOT SURE IF ITS RIGHT THO #####
+
+# covariance
+mdepPRS_0.05 ~~ pdepPRS_0.05
+mGHQD_res ~~ pGHQD_res
+'
+
+# Fit the model
+fitM <- sem(model, data=data, se="bootstrap", estimator='ML')
+sem_model <- summary(fitM, standardized=TRUE, fit.measures=TRUE, ci=TRUE)
+sem_model_df <- as.data.frame(sem_model$PE)
+sem_model_final <- sem_model_df[sem_model_df$label != "", c(1:4,6:7,9:11)] #here we are extracting values of interest e.g. est, se, p, ci
+extended_restricted_model <- cbind(sem_model_final, AIC(fitM))
+
+write.csv(extended_restricted_model, "depPRS_GHQD_0.05_pa_m3_bs_nosib.csv", row.names=F, quote=F)
+```
+
+### Maternal Only Duo Sample 
+
+```{r, eval=FALSE}
+
+rm(list=ls())
+library(lavaan)
+
+data <- read.table("IGE_dep_pathway_df_matduo", header=T)
+data <- data[,-c(5,7,32)]
+data <- data[complete.cases(data),] #n=5108
+
+##############
+#SIMPLE MODEL#
+##############
+
+# Define model
+
+model <- ' 
+
+# direct effects
+GHQD ~ AGE+SEX+C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20
+GHQD ~ c*mdepPRS_0.05
+             
+
+# mediator
+depPRS_0.05 ~ 0.5*mdepPRS_0.05
+GHQD ~ b*depPRS_0.05
+
+# indirect effects (a*b, d*b)
+ab := 0.5*b
+
+
+# total effects 
+total_mum := c + (0.5*b)
+
+'
+
+# Fit the model
+fitM <- sem(model, data=data, se="bootstrap", estimator='ML')
+
+sem_model <- summary(fitM, standardized=TRUE, fit.measures=TRUE, ci=TRUE)
+sem_model_df <- as.data.frame(sem_model$PE)
+sem_model_final <- sem_model_df[sem_model_df$label != "", c(1:4,6:7,9:11)] #here we are extracting values of interest e.g. est, se, p, ci
+simple_model <- cbind(sem_model_final, AIC(fitM))
+
+write.csv(simple_model, "depPRS_GHQD_0.05_pa_m1_bs_matduo.csv", row.names=F, quote=F)
+
+################
+#EXTENDED MODEL#
+################
+
+rm(list=ls())
+data <- read.table("IGE_dep_pathway_df_matduo", header=T)
+data <- data[,-c(5,7,32)]
+data <- data[complete.cases(data),] #n=5108
+
+# Define model
+
+model <- '
+
+#direct effects
+GHQD ~ AGE+SEX+C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20
+GHQD ~ c*mdepPRS_0.05
+         
+
+#mediator
+depPRS_0.05 ~ 0.5*mdepPRS_0.05
+GHQD ~ b*depPRS_0.05
+mGHQD_res ~ h*mdepPRS_0.05+mAGE
+GHQD ~ j*mGHQD_res
+
+# indirect effects (a*b, d*b)
+ab := 0.5*b
+hj := h*j
+
+
+# total effects 
+total_mum := c + (0.5*b) + (h*j) ###### THIS IS WHAT I HAVE ADDED - NOT SURE IF ITS RIGHT THO #####
+
+'
+
+# Fit the model
+fitM <- sem(model, data=data, se="bootstrap", estimator='ML')
+sem_model <- summary(fitM, standardized=TRUE, fit.measures=TRUE, ci=TRUE)
+sem_model_df <- as.data.frame(sem_model$PE)
+sem_model_final <- sem_model_df[sem_model_df$label != "", c(1:4,6:7,9:11)] #here we are extracting values of interest e.g. est, se, p, ci
+extended_model <- cbind(sem_model_final, AIC(fitM))
+
+write.csv(extended_model, "depPRS_GHQD_0.05_pa_m2_bs_matduo.csv", row.names=F, quote=F)
+
+#############################
+#EXTENDED (RESTRICTED) MODEL#
+#############################
+
+rm(list=ls())
+data <- read.table("IGE_dep_pathway_df_matduo", header=T)
+data <- data[,-c(5,7,32)]
+data <- data[complete.cases(data),] #n=5108
+
+# Define model
+
+model <- ' 
+
+#direct effects
+GHQD ~ AGE+SEX+C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20
+
+#mediator
+depPRS_0.05 ~ 0.5*mdepPRS_0.05
+GHQD ~ b*depPRS_0.05
+mGHQD_res ~ h*mdepPRS_0.05+mAGE
+GHQD ~ j*mGHQD_res
+
+# indirect effects (a*b, d*b)
+ab := 0.5*b
+hj := h*j
+
+
+# total effects 
+total_mum := (0.5*b) + (h*j) ###### THIS IS WHAT I HAVE ADDED - NOT SURE IF ITS RIGHT THO #####
+'
+
+# Fit the model
+fitM <- sem(model, data=data, se="bootstrap", estimator='ML')
+sem_model <- summary(fitM, standardized=TRUE, fit.measures=TRUE, ci=TRUE)
+sem_model_df <- as.data.frame(sem_model$PE)
+sem_model_final <- sem_model_df[sem_model_df$label != "", c(1:4,6:7,9:11)] #here we are extracting values of interest e.g. est, se, p, ci
+extended_restricted_model <- cbind(sem_model_final, AIC(fitM))
+
+write.csv(extended_restricted_model, "depPRS_GHQD_0.05_pa_m3_bs_matduo.csv", row.names=F, quote=F)
+```
+
+### Paternal Only Duo Sample  
+
+```{r, eval=FALSE}
+
+rm(list=ls())
+library(lavaan)
+
+data <- read.table("IGE_dep_pathway_df_patduo", header=T)
+data <- data[,-c(5,7,32)]
+data <- data[complete.cases(data),] #n=3364
+
+##############
+#SIMPLE MODEL#
+##############
+
+# Define model
+
+model <- ' 
+
+# direct effects
+GHQD ~ AGE+SEX+C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20
+GHQD ~ f*pdepPRS_0.05             
+
+# mediator
+depPRS_0.05 ~ 0.5*pdepPRS_0.05
+GHQD ~ b*depPRS_0.05
+
+# indirect effects (a*b, d*b)
+db := 0.5*b
+
+# total effects 
+total_dad := f + (0.5*b)
+
+'
+
+# Fit the model
+fitM <- sem(model, data=data, se="bootstrap", estimator='ML')
+
+sem_model <- summary(fitM, standardized=TRUE, fit.measures=TRUE, ci=TRUE)
+sem_model_df <- as.data.frame(sem_model$PE)
+sem_model_final <- sem_model_df[sem_model_df$label != "", c(1:4,6:7,9:11)] #here we are extracting values of interest e.g. est, se, p, ci
+simple_model <- cbind(sem_model_final, AIC(fitM))
+
+write.csv(simple_model, "depPRS_GHQD_0.05_pa_m1_bs_patduo.csv", row.names=F, quote=F)
+
+################
+#EXTENDED MODEL#
+################
+
+rm(list=ls())
+data <- read.table("IGE_dep_pathway_df_patduo", header=T)
+data <- data[,-c(5,7,32)]
+data <- data[complete.cases(data),] #n=3364
+
+# Define model
+
+model <- '
+
+#direct effects
+GHQD ~ AGE+SEX+C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20
+GHQD ~ f*pdepPRS_0.05         
+
+#mediator
+depPRS_0.05 ~ 0.5*pdepPRS_0.05 
+GHQD ~ b*depPRS_0.05
+pGHQD_res ~ g*pdepPRS_0.05+pAGE
+GHQD ~ i*pGHQD_res
+
+
+# indirect effects (a*b, d*b)
+db := 0.5*b
+gi := g*i
+
+
+
+# total effects 
+total_dad := f + (0.5*b) + (g*i) ###### THIS IS WHAT I HAVE ADDED - NOT SURE IF ITS RIGHT THO #####
+
+'
+
+# Fit the model
+fitM <- sem(model, data=data, se="bootstrap", estimator='ML')
+sem_model <- summary(fitM, standardized=TRUE, fit.measures=TRUE, ci=TRUE)
+sem_model_df <- as.data.frame(sem_model$PE)
+sem_model_final <- sem_model_df[sem_model_df$label != "", c(1:4,6:7,9:11)] #here we are extracting values of interest e.g. est, se, p, ci
+extended_model <- cbind(sem_model_final, AIC(fitM))
+
+write.csv(extended_model, "depPRS_GHQD_0.05_pa_m2_bs_patduo.csv", row.names=F, quote=F)
+
+#############################
+#EXTENDED (RESTRICTED) MODEL#
+#############################
+
+rm(list=ls())
+data <- read.table("IGE_dep_pathway_df_patduo", header=T)
+data <- data[,-c(5,7,32)]
+data <- data[complete.cases(data),] #n=3364
+
+# Define model
+
+model <- ' 
+
+#direct effects
+GHQD ~ AGE+SEX+C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20
+
+#mediator
+depPRS_0.05 ~ 0.5*pdepPRS_0.05
+GHQD ~ b*depPRS_0.05
+pGHQD_res ~ g*pdepPRS_0.05+pAGE
+GHQD ~ i*pGHQD_res
+
+# indirect effects (a*b, d*b)
+db := 0.5*b
+gi := g*i
+
+
+
+# total effects 
+total_dad := (0.5*b) + (g*i) ###### THIS IS WHAT I HAVE ADDED - NOT SURE IF ITS RIGHT THO #####
+
+'
+
+# Fit the model
+fitM <- sem(model, data=data, se="bootstrap", estimator='ML')
+sem_model <- summary(fitM, standardized=TRUE, fit.measures=TRUE, ci=TRUE)
+sem_model_df <- as.data.frame(sem_model$PE)
+sem_model_final <- sem_model_df[sem_model_df$label != "", c(1:4,6:7,9:11)] #here we are extracting values of interest e.g. est, se, p, ci
+extended_restricted_model <- cbind(sem_model_final, AIC(fitM))
+
+write.csv(extended_restricted_model, "depPRS_GHQD_0.05_pa_m3_bs_patduo.csv", row.names=F, quote=F)
+```
+

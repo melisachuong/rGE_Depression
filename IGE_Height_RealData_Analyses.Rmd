@@ -1,0 +1,2174 @@
+---
+title: 'Indirect Genetic Effects: Height Analysis Dataframes'
+author: "Melisa Chuong"
+date: "25/01/2021"
+output: 
+  html_document:
+    code_folding: hide
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Explore Indirect Genetic Effects using Regressions and Pathway Analyses
+# Aim  
+I will be using trio's full polygenic risk scores rather than splitting PRSs into transmitted and non-transmitted counterparts.
+
+# GS TRIOS  
+
+Genotyped data and pedigree files can be found on datastore @   /exports/igmm/eddie/GenScotDepression/data/genscot/genetics/genotypes/GS20K_PLINK_files/QCd_data   
+*These files are saved as GS_QC.bed/.bim/.fam*  
+
+I find genotyped GS trios using the pedigree file available, from this we create a GS_trio file.
+
+```{r, eval=FALSE}
+rm(list=ls())
+
+fam <- read.table("GS_QC.fam") #this file was renamed for convenience 
+colnames(fam) <- c("FID", "IID", "PID", "MID", "SEX", "PHENO")
+
+fatherpresent <- fam[fam$PID%in%fam$IID,] #Finding PIDs also present in the IID column - every individual in the IID column in the pedigree file has genotyped data#
+dim(fatherpresent) #fatherduo n= 3,865
+
+motherpresent <- fam[fam$MID%in%fam$IID,] #Finding MIDs also present in the IID column#
+dim(motherpresent) #motherduo n=5,954
+
+trio <- fam[fam$PID%in%fam$IID & fam$MID%in%fam$IID,] #Finding trios, i.e. individuals with both PIDs and MIDs present in the IID column#
+
+write.table(trio, "GS_trio", row.names=F, quote=F)
+#n= 2680 genotyped trios available in Generation Scotland
+```
+
+# PHENOTYPES {.tabset}  
+
+Our phenotype of interest is height, measured in CMs. We can find this variable within the masterDB.Rdata file, which can be found on datastore @ /exports/igmm/GenScotDepression/data/genscot/phenotypes/masterDB.Rdata
+
+## Height  
+
+```{r, eval=FALSE}
+
+rm(list=ls())
+
+df <- load("masterDB.Rdata")
+which(colnames(totaldata)=="height")
+
+#column IID =1, FID =79, HEIGHT=34
+height <- totaldata[,c(1,34,79)]
+
+#Reordering so column order is FID, IID, HEIGHT
+height <- height[,c(3,1,2)] #n=24,075
+height <- height[complete.cases(height),] #n=21,450
+
+colnames(height) <- c("FID", "IID", "HEIGHT")
+hist(height$HEIGHT, col="green4")
+summary(height$HEIGHT) #I am 10 cms shorter than the average scot :(
+
+
+write.table(height, "GSheight", row.names=F, quote=F)
+```
+
+## QC Phenotype    
+
+Removing phenotype values that are greater or less than 4 standard deviations away from the mean (i.e. outliers!) - after controlling for AGE and SEX!  
+Age and sex variable files provided by Carmen Amador.  
+8 Outliers are removed from the whole GS sample.
+
+```{r, eval=FALSE}
+age <- read.table("GS_Ages.qcovar", header=T)
+age <- age[,1:3]
+colnames(age) <- c("FID", "IID", "AGE")
+
+sex <- read.table("GS_SexClinic.fcovar", header=T)
+sex <- sex[,1:3]
+colnames(sex) <- c("FID", "IID", "SEX")
+
+cov <- merge(age, sex, by=c("FID", "IID"))
+
+colnames(height) <- c("FID", "IID", "HEIGHT")
+
+df1 <- merge(height, cov, by=c("FID", "IID")) #n=20,026
+
+#We need to remove individuals with NA data
+df1 <- df1[!is.na(df1$HEIGHT),] #n=19,961
+
+#Regressing out the effects of AGE and SEX
+reg <- lm(HEIGHT~AGE+SEX, data=df1)
+res <- data.frame(FID=df1$FID, IID=df1$IID, HEI_res=residuals(reg))
+
+summary(res$HEI_res)
+sd(res$HEI_res)
+
+outlierIDs_positive <- subset(res, res$HEI_res>mean(res$HEI_res)+4*sd(res$HEI_res))
+outlierIDs_negative <- subset(res, res$HEI_res<mean(res$HEI_res)-4*sd(res$HEI_res))
+
+outlierIDs <- rbind(outlierIDs_positive, outlierIDs_negative)#n=8
+
+#We only actually need the identity numbers of the outliers
+outlierIDs <- outlierIDs[,1:2]
+
+write.table(outlierIDs, "heightOUTLIERS", row.names=F, quote=F)
+
+#Now removing outliers from our height variable
+cleanheight <- height[!(height$IID%in%outlierIDs$IID),] #n=(21,450-8) 21,442
+
+trio <- read.table("GS_trio", header=T)
+df2 <- merge(trio, cleanheight, by=c("FID", "IID"), all.x=T)
+colnames(cleanheight)[2:3] <- c("MID", "mHEIGHT")
+df3 <- merge(df2, cleanheight, by=c("FID", "MID"), all.x=T)
+colnames(cleanheight)[2:3] <- c("PID", "pHEIGHT")
+df4 <- merge(df3, cleanheight, by=c("FID", "PID"), all.x=T)
+
+```
+
+## Phenotype Demographics  
+
+hist + var + sd (offspring)
+```{r, eval=FALSE}
+#offspring height demographics
+
+df4 <- df4[complete.cases(df4),] #Using trios with COMPLETE data; n=2,648
+hist(df4$HEIGHT, col="cadetblue3")
+
+summary(df4$HEIGHT)
+var(df4$HEIGHT)
+sd(df4$HEIGHT)
+
+```
+
+hist + var + sd (offspring)
+```{r, eval=FALSE}
+#maternal height demographics
+
+hist(df4$mHEIGHT, col="lightpink1")
+
+summary(df4$mHEIGHT)
+var(df4$mHEIGHT)
+sd(df4$mHEIGHT)
+```
+
+hist + var + sd (paternal)
+```{r, eval=FALSE}
+#paternal height demographics
+
+hist(df4$pHEIGHT, col="darkolivegreen3")
+
+summary(df4$pHEIGHT)
+var(df4$pHEIGHT)
+sd(df4$pHEIGHT)
+
+```
+
+# POLYGENIC RISK SCORES {.tabset}  
+
+We will use PRSice2 (Choi & O'Reilly., 2019) to generate the PRSs. We will pre-correct our phenotypes for covariates. We will use 1000G as a reference panel for LD estimation which will go onto guide pruning and clumping of SNPs. 
+
+Covariates include the first 20 principle components from a Genomics Relatedness Matrix of GS data, age and sex.   
+
+PCs can be found on datastore @ /exports/igmm/datastore/GenScotDepression/data/genscot/genetics/genotypes/GS20K_PLINK_files/PCA_MDS_components/HM3mds.mds  
+
+Age and sex covariate data is provided by Carmen Amador @   /gpfs/igmmfs01/eddie/haley-lab/melisa/dataformelisa/GS_SexClinic.fcovar / GS_Ages.qcovar
+
+We are creating height PRSs for EVERYONE with height data in GS, not just trios - this allows the effects of covariates to be controlled for with a little more accuracy.
+
+## Covariate Correction  
+
+```{r, eval=FALSE}
+
+library(dplyr)
+
+age <- read.table("GS_Ages.qcovar", header=T)
+age <- age[,c(1:3)] #2 columns with age measured in different formats, using the years (column)
+colnames(age) <- c("FID", "IID", "AGE")#n=20,032
+
+sex <- read.table("GS_SexClinic.fcovar", header=T)
+sex <- sex[,c(1:3)] #just using the sex info
+colnames(sex) <- c("FID", "IID", "SEX")
+sex$SEX <- as.factor(sex$SEX)#n=20,032
+
+pcs <- read.table("HM3mds.mds", header=T)
+pcs <- distinct(pcs, IID, .keep_all = TRUE) #Some IIDs are repeated, so need to sort this out#
+head(pcs)
+pcs <- pcs[,-3]#n=20,142
+
+cov <- merge(age, sex, by=c("FID","IID"))
+cov <- merge(cov, pcs, by=c("FID", "IID"))#n=19,990
+
+df1 <- merge(height, cov, by=c("FID","IID"))
+df1 <- df1[complete.cases(df1),] #n=19,923
+
+reg <- lm(HEIGHT~C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20+AGE+SEX, data=df1)
+summary(reg)
+result <- data.frame(FID=df1$FID, IID=df1$IID, HEI_res=residuals(reg))
+
+write.table(result, "GSheight_res", row.names=F, quote=F)
+#it is ok if the phenotype used in PRSice analyses is not standardised - we are interested in the amount of accounted variance R2 attributable to the PRSs
+
+```
+
+1000G files need to be in the format of plink1 files. Plink2 versions are available on datastore @ /exports/igmm/datastore/GenScotDepression/data/resources/1000g/PGEN
+
+Need to convert vzs plink2 versions of files to .bed\.bim\.fam plink1 versions
+plink2.00 is used for this 
+
+```
+plink --pfile all_phase3 --max-allele 2 --make-bed --out all_phase3
+
+```
+## Computing PGSs  
+
+We will use:
+
+Base data: Height GWAS meta-analysis sumstats  ~ Yengo et al., 2018: Wood et al., 2014 N= 253,288 individuals (NO GENSCOT) + UKB (Sample size of 693,529)  
+
+LD data: 1000G LD structure (see above)  
+
+Phenotype data: The GSheight_res file we created above. This is height for all GS participants with the effects of age, sex and 20PCs removed  
+
+Target data: Will be the available plink files for GS; GS_QC.bed, GS_QC.bim, GS_QC.fam  
+
+We will be creating different PRSs whereby the number of SNPs used to inform the PRSs will be dependent on the SNPs p-value GWAS association with the trait. We use 10 different p-value association thresholds ranging from 5x10-8 : 1.
+
+Shell script
+
+```
+#!/bin/sh
+###########################################
+
+# M.Chuong, Edinburgh U.K, January2020
+# Eddie HEIGHT PRSice Script
+
+#$ -N GenScotHeightPRS
+#$ -cwd
+#$ -pe sharedmem 2 # number of cores
+#$ -l h_vmem=40G # memory per core
+#$ -l h_rt=12:00:00 ## requested time
+#$ -m baes ## notifications: (b)begin/(a)aborted/(e)end/(s)suspended/(n)nomail
+#$ -M melisa.chuong@ed.ac.uk ## email for notifications
+
+# INITIALISE ENV MODULES
+. /etc/profile.d/modules.sh # if using modules need to add this line
+# LOAD THE MODULES
+module load igmm/apps/R/3.3.3
+
+
+Rscript PRSice.R\ 
+--dir .\ 
+--prsice ./PRSice_linux\
+--base Meta-analysis_Wood_et_al+UKBiobank_2018.txt\ 
+--target GS_QC\ 
+--thread 1\ 
+--print-snp\ 
+--beta\ 
+--stat Effect\ 
+--binary-target F\ 
+--snp MarkerName\ 
+--A1 Allele1\ 
+--A2 Allele2\ 
+--se StdErr\ 
+--pvalue P-value\ 
+--bar-levels 0.00000005,0.0000005,0.000005,0.00005,0.0005,0.005,0.05,0.5,0.75,1\ 
+--fastscore\ 
+--all-score\ 
+--ld all_phase3\ 
+--pheno-file GSheight_res\ 
+--pheno-col HEI_res\ 
+--out GSheight
+
+```
+Summary of generated PRSs  
+Currently, PRSs informed by SNPs exceeding the genome-wide p-value threshold of 0.05 accounts for the greatest amount of variance in comparison to the other PRSs.  
+histogram of PRSs standardised  
+
+```{r, eval=FALSE}
+
+rm(list=ls())
+
+hprs <- read.table("GSheight.all.score", header=T)
+head(hprs)
+hprs <- hprs[,c(1:2,9)]
+colnames(hprs)[3] <- c("heiPRS_0.05") 
+
+hprs$heiPRS_0.05 <- scale(hprs$heiPRS_0.05)
+hist(hprs$heiPRS_0.05, col="orange")#distribution seems normal
+```
+
+height PRS - height summary  
+
+```{r, eval=FALSE}
+hprs$heiPRS_0.05 <- scale(hprs$heiPRS_0.05)
+summary(hprs$heiPRS_0.05)
+
+hei_prs <- read.table("GSheight.prsice")
+hei_prs
+
+```
+
+# SANITY CHECKS {.tabset}  
+
+## Sanity Check Dataframe  
+Resulting DF has ALL variables standardised!
+
+```{r, eval=FALSE}
+
+dim(hprs)
+
+df <- read.table("GS_trio", header=T)
+df <- df[,c(1:4)]
+
+GSheight <- read.table("GSheight", header=T)
+outliers <- read.table("heightOUTLIERS", header=T)
+GSheight <- GSheight[!(GSheight$IID%in%outliers$IID),]
+GSheight$HEIGHT <- scale(GSheight$HEIGHT)
+
+df1 <- merge(df, GSheight, by=c("FID", "IID"), all.x=T)
+
+colnames(GSheight)[2:3] <- c("MID", "mHEIGHT")
+df2 <- merge(df1, GSheight, by=c("FID", "MID"), all.x=T)
+
+colnames(GSheight)[2:3] <- c("PID", "pHEIGHT")
+df3 <- merge(df2, GSheight, by=c("FID", "PID"), all.x=T)
+
+df4 <- merge(df3, hprs, by=c("FID", "IID"))
+
+colnames(hprs)[2:3] <- c("MID","mheiPRS_0.05")
+df5 <- merge(df4, hprs, by=c("FID", "MID"))
+
+colnames(hprs)[2:3] <- c("PID","pheiPRS_0.05")
+df6 <- merge(df5, hprs, by=c("FID", "PID"))
+
+age <- read.table("GS_Ages.qcovar", header=T)
+age <- age[,c(1:3)]
+age$age <- scale(age$age)
+colnames(age) <- c("FID", "MID", "mAGE")
+
+df7 <- merge(df6, age, by=c("FID", "MID"))
+colnames(age) <- c("FID", "PID", "pAGE")
+df8 <- merge(df7, age, by=c("FID", "PID"))
+
+library(dplyr)
+
+colnames(age)[2:3] <- c("IID", "AGE")
+sex <- read.table("GS_SexClinic.fcovar", header=T)
+head(sex)
+sex <- sex[,c(1:3)]
+colnames(sex) <- c("FID", "IID", "SEX")
+sex$SEX <- as.factor(sex$SEX)
+dim(sex)
+
+pcs <- read.table("HM3mds.mds", header=T)
+pcs <- distinct(pcs, IID, .keep_all = TRUE) #Some IIDs are repeated, so need to sort this out#
+head(pcs)
+pcs <- pcs[,-3]
+pcs[,3:22] <- scale(pcs[,3:22])
+
+cov <- merge(age, sex, by=c("FID","IID"))
+cov <- merge(cov, pcs, by=c("FID", "IID"))
+
+write.table(cov, "GScov_scaled", row.names=F, quote=F)
+
+df9 <- merge(df8, cov, by=c("FID", "IID"))
+names(df9)
+
+write.table(df9, "IGE_height_PRS_df", row.names=F, quote=F) #this df is purely for a few sanity checks
+
+```
+
+## Covariates; Model or Pre-correct?  
+
+To check whether I should use pre-corrected height phenotypes or alternatively model the covariates, I run regression analyses $$ height \sim heightPRS + COV $$ vs $$ height(residualised) \sim heightPRS $$  
+
+Results below show difference to be quite minimal, as many regression models will be implemented I will use the precorrected DV method to make results easier to read.  
+
+```{r, eval=FALSE}
+
+prs <- read.table("GSheight.all.score", header=T)
+prs[,3:12] <- scale(prs[,3:12])
+
+colnames(GSheight)[2:3] <- c("IID", "HEIGHT")
+df <- merge(GSheight, prs, by=c("FID","IID"), all.x=T)
+df2 <- merge(df, cov, by=c("FID", "IID"), all.x=T)
+df2 <- df2[complete.cases(df2),]
+
+#pre-correct outcome variables, so output for the regressions for each PRS is not too large#
+
+reg <- lm(HEIGHT~C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20+AGE+SEX, data=df2)
+hei_res <- data.frame(FID=df2$FID, IID=df2$IID, HEI_res=residuals(reg))
+
+df3 <- merge(df2, hei_res, by=c("FID", "IID"))
+
+#Check to see if I get similar results with covariates modelled vs pre-corrected variables, n=19,915
+```
+
+```{r, eval=FALSE}
+test <- lm(HEIGHT~X0.05+C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20+AGE+SEX, data=df3)
+summary(test)
+
+test2 <- lm(HEI_res~X0.05, data=df3)
+summary(test2)
+
+
+```
+
+## Trio PGSs Predict Trio Phenotypes?  
+
+```{r, eval=FALSE}
+trio <- read.table("GS_trio", header=T)
+ofid <- trio[,1:2]
+mid <- trio[,c(1,4)]
+colnames(mid)[2] <- "IID"
+pid <- trio[,c(1,3)]
+colnames(pid)[2] <- "IID"
+
+df4 <- merge(ofid, df3, by=c("FID", "IID"), all.x=T)
+df5 <- merge(mid, df3, by=c("FID", "IID"), all.x=T)
+df6 <- merge(pid, df3, by=c("FID", "IID"), all.x=T)
+
+#whole sample N= 19915
+
+a <- c()
+for(threshold in 4:13){
+  regression <- summary(lm(df3$HEI_res~df3[,threshold]), data=df3)
+  reginfo <- cbind(names(df4[threshold]), coefficients(regression), regression$adj.r.squared)
+  a <- as.data.frame(rbind(a, reginfo))
+}
+colnames(a) <- c("Threshold", "Estimate", "StdErr", "t", "p", "AdjR2")
+a <- a[seq(2,20,by=2),] #Not including intercepts
+write.csv(a, "heiPRS_hei_associations_results_whole.csv", row.names=F, quote=F) 
+
+
+#Offspring sample N=2668
+
+a <- c()
+for(threshold in 4:13){
+  regression <- summary(lm(df4$HEI_res~df4[,threshold]), data=df4)
+  reginfo <- cbind(names(df4[threshold]), coefficients(regression), regression$adj.r.squared)
+  a <- as.data.frame(rbind(a, reginfo))
+}
+colnames(a) <- c("Threshold", "Estimate", "StdErr", "t", "p", "AdjR2")
+a <- a[seq(2,20,by=2),] #Not including intercepts
+write.csv(a, "heiPRS_hei_associations_results_off.csv", row.names=F, quote=F)
+
+
+#maternal n=2664
+
+a <- c()
+for(threshold in 4:13){
+  regression <- summary(lm(df5$HEI_res~df5[,threshold]), data=df5)
+  reginfo <- cbind(names(df5[threshold]), coefficients(regression), regression$adj.r.squared)
+  a <- as.data.frame(rbind(a, reginfo))
+}
+colnames(a) <- c("Threshold", "Estimate", "StdErr", "t", "p", "AdjR2")
+a <- a[seq(2,20,by=2),] #Not including intercepts
+write.csv(a, "heiPRS_hei_associations_results_maternal.csv", row.names=F, quote=F)
+
+
+#paternal n=2676
+
+a <- c()
+for(threshold in 4:13){
+  regression <- summary(lm(df6$HEI_res~df6[,threshold]), data=df6)
+  reginfo <- cbind(names(df6[threshold]), coefficients(regression), regression$adj.r.squared)
+  a <- as.data.frame(rbind(a, reginfo))
+}
+colnames(a) <- c("Threshold", "Estimate", "StdErr", "t", "p", "AdjR2")
+a <- a[seq(2,20,by=2),] #Not including intercepts
+write.csv(a, "heiPRS_hei_associations_results_paternal.csv", row.names=F, quote=F)
+
+```
+
+![.](./HeightResults/Slide2.PNG)
+
+## Trio PGS Correlations     
+
+I am exploring PRSs generated using SNPs exceeding the p-value threshold of p<0.05  
+Remember all variables are standardised - should interpret accordingly
+
+```{r, eval=FALSE}
+df <- read.table("IGE_height_PRS_df", header=T)
+
+cor.test(df$heiPRS_0.05, df$mheiPRS_0.05)
+cor.test(df$heiPRS_0.05, df$pheiPRS_0.05)
+cor.test(df$mheiPRS_0.05, df$pheiPRS_0.05)
+
+cor.test(df$HEIGHT, df$mHEIGHT)
+cor.test(df$HEIGHT, df$pHEIGHT)
+cor.test(df$mHEIGHT, df$pHEIGHT)
+
+df <- merge(df, hei_res, by=c("FID", "IID"))
+
+summary(lm(HEIGHT~heiPRS_0.05, data=df))
+summary(lm(HEI_res~heiPRS_0.05, data=df))
+summary(lm(mHEIGHT~mheiPRS_0.05, data=df))
+summary(lm(pHEIGHT~pheiPRS_0.05, data=df))
+
+```
+
+![.](./HeightResults/Slide3.PNG)
+
+# DATAFRAMES {.tabset}  
+
+I will create separate dataframes for regression analyses and pathway analyses  
+Resulting dataframes has all variables and covariates standardised  
+
+## Regression Dataframe   
+
+```{r, eval=FALSE}
+library(dplyr)
+
+#will not standardise parental height until properly residualised
+
+GSheight <- read.table("GSheight", header=T)
+outliers <- read.table("heightOUTLIERS", header=T)
+GSheight <- GSheight[!(GSheight$IID%in%outliers$IID),]
+
+hei <- GSheight
+colnames(hei)[2:3] <- c("MID", "mHEI")
+
+age <- read.table("GS_Ages.qcovar", header=T)
+age <- age[,c(1:3)]
+colnames(age) <- c("FID", "MID", "mAGE")
+
+pcs <- read.table("HM3mds.mds", header=T)
+pcs <- distinct(pcs, IID, .keep_all = TRUE) #Some IIDs are repeated, so need to sort this out#
+pcs <- pcs[,-c(1,3)]
+colnames(pcs)[1] <- "MID"
+
+df <- merge(hei, age, by=c("FID", "MID"))
+df2 <- merge(df, pcs, by="MID")
+df2 <- df2[complete.cases(df2),]
+
+#pre-correct maternal height for age and 20 PCs 
+res <- lm(mHEI~C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20+mAGE, data=df2)
+result <- data.frame(FID=df2$FID, MID=df2$MID, mHEI_res=residuals(res))
+result[,3] <- scale(result[,3]) #standardise this precorrected variable
+
+colnames(hei)[2:3] <- c("PID", "pHEI")
+colnames(age) <- c("FID", "PID", "pAGE")
+colnames(pcs)[1] <- "PID"
+
+df3 <- merge(hei, age, by=c("FID", "PID"))
+df4 <- merge(df3, pcs, by="PID")
+df4 <- df4[complete.cases(df4),]
+
+res2 <- lm(pHEI~C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20+pAGE, data=df4)
+result2 <- data.frame(FID=df4$FID, PID=df4$PID, pHEI_res=residuals(res2))
+result2[,3] <- scale(result2[,3])
+
+regdf <- read.table("IGE_height_PRS_df", header=T) #this df already has all variables standardised, so makes sense to add standardise the pre-corrected parental height variables
+
+regdf <- regdf[!(regdf$IID%in%outliers$IID),] #making sure to remove outliers from this df
+regdf <- merge(regdf, result, by=c("FID", "MID"), all.x=T)
+regdf <- merge(regdf, result2, by=c("FID", "PID"), all.x=T)
+names(regdf)
+
+regdf$NFID <- paste(regdf$PID, regdf$MID, sep="_")
+regdf <- regdf[complete.cases(regdf),]
+
+write.table(regdf, "IGE_height_regression_df", row.names=F, quote=F)
+#n=2,648 
+```
+
+## Pathway Model Dataframe   
+Parent phenotypes are pre-corrected for PCs only - we can model AGE in the pathway models, in fact, results might be quite informative
+
+```{r, eval=FALSE}
+
+rm(list=ls())
+
+library(dplyr)
+
+hprs <- read.table("GSheight.all.score", header=T)
+head(hprs)
+hprs <- hprs[,c(1:2,9)]
+colnames(hprs)[3] <- c("heiPRS_0.05")
+dim(hprs)
+hprs$heiPRS_0.05 <- scale(hprs$heiPRS_0.05)
+
+trio <- read.table("GS_trio", header=T)
+df <- trio[,c(1:4)]
+
+height <- read.table("GSheight", header=T)
+outliers <- read.table("heightOUTLIERS", header=T)
+height <- height[!(height$IID%in%outliers$IID),]
+
+sex <- read.table("GS_SexClinic.fcovar", header=T)
+head(sex)
+sex <- sex[,c(1:3)]
+colnames(sex) <- c("FID", "IID", "SEX")
+sex$SEX <- as.factor(sex$SEX)
+dim(sex)
+
+age <- read.table("GS_Ages.qcovar", header=T)
+age <- age[,1:3]
+age$AGE <- scale(age$age)
+age <- age[,-3]
+colnames(age) <- c("FID", "IID", "AGE")
+
+pcs <- read.table("HM3mds.mds", header=T)
+pcs <- distinct(pcs, IID, .keep_all = TRUE) #Some IIDs are repeated, so need to sort this out#
+head(pcs)
+pcs <- pcs[,-3]
+dim(pcs) 
+
+##################################
+##Precorrect parental phenotypes##
+##################################
+
+# maternal Height #
+
+colnames(height)[2:3] <- c("MID", "mHEI")
+colnames(pcs)[1:2] <- c("FID","MID")
+
+dfm <- merge(height, pcs, by=c("FID","MID"))
+dfm <- dfm[complete.cases(dfm),]
+
+res <- lm(mHEI~C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20, data=dfm)
+summary(res)
+result <- data.frame(FID=dfm$FID, MID=dfm$MID, mHEI_res=residuals(res))
+result[,3] <- scale(result[,3])
+
+# paternal Height #
+
+colnames(height)[2:3] <- c("PID", "pHEI")
+colnames(pcs)[1:2] <- c("FID","PID")
+
+dfp <- merge(height, pcs, by=c("FID","PID"))
+dfp <- dfp[complete.cases(dfp),]
+
+res <- lm(pHEI~C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20, data=dfp)
+summary(res)
+result2 <- data.frame(FID=dfp$FID, PID=dfp$PID, pHEI_res=residuals(res))
+result2[,3] <- scale(result2[,3])
+
+###
+colnames(pcs)[1:2] <- c("FID", "IID")
+pcs[3:22] <- scale(pcs[3:22])
+
+colnames(height) <- c("FID", "IID", "HEIGHT")
+height$HEIGHT <- scale(height$HEIGHT)
+
+df1 <- merge(df, height, by=c("FID", "IID"), all.x=T)
+
+colnames(height)[2:3] <- c("MID", "mHEI")
+df2 <- merge(df1, height, by=c("FID", "MID"), all.x=T)
+
+colnames(height)[2:3] <- c("PID", "pHEI")
+df3 <- merge(df2, height, by=c("FID", "PID"), all.x=T)
+
+df4 <- merge(df3, sex, by=c("FID", "IID"), all.x=T)
+
+df5 <- merge(df4, age, by=c("FID", "IID"))
+
+colnames(age)[2:3] <- c("MID", "mAGE")
+df6 <- merge(df5, age, by=c("FID", "MID"))
+
+colnames(age)[2:3] <- c("PID", "pAGE")
+df7 <- merge(df6, age, by=c("FID", "PID"))
+
+df8 <- merge(df7 , pcs, by=c("FID", "IID"))
+
+df9 <- merge(df8, result, by=c("FID", "MID"), all.x=T)
+
+df10 <- merge(df9, result2, by=c("FID", "PID"), all.x=T)
+
+df11 <- merge(df10, hprs, by=c("FID", "IID"), all.x=T)
+
+colnames(hprs)[2:3] <- c("MID", "mheiPRS_0.05")
+df12 <- merge(df11, hprs, by=c("FID", "MID"), all.x=T)
+
+colnames(hprs)[2:3] <- c("PID", "pheiPRS_0.05")
+df13 <- merge(df12, hprs, by=c("FID", "PID"), all.x=T)
+
+df13$NFID <- paste(df13$PID, df13$MID, sep="_")
+names(df13)
+
+write.table(df13, "IGE_height_pathway_df", row.names=F, quote=F)
+
+```
+
+## Pathway Model Dataframe (Maternal Duo)  
+
+```{r, eval=FALSE}
+
+rm(list=ls())
+library(dplyr)
+
+hprs <- read.table("GSheight.all.score", header=T)
+head(hprs)
+hprs <- hprs[,c(1:2,9)]
+colnames(hprs)[3] <- c("heiPRS_0.05")
+dim(hprs)
+hprs$heiPRS_0.05 <- scale(hprs$heiPRS_0.05)
+
+duo <- read.table("GS_mat_duo", header=T)
+df <- duo[,c(1:4)]
+
+height <- read.table("GSheight", header=T)
+outliers <- read.table("heightOUTLIERS", header=T)
+height <- height[!(height$IID%in%outliers$IID),]
+
+sex <- read.table("GS_SexClinic.fcovar", header=T)
+head(sex)
+sex <- sex[,c(1:3)]
+colnames(sex) <- c("FID", "IID", "SEX")
+sex$SEX <- as.factor(sex$SEX)
+dim(sex)
+
+age <- read.table("GS_Ages.qcovar", header=T)
+age <- age[,1:3]
+age$AGE <- scale(age$age)
+age <- age[,-3]
+colnames(age) <- c("FID", "IID", "AGE")
+
+pcs <- read.table("HM3mds.mds", header=T)
+pcs <- distinct(pcs, IID, .keep_all = TRUE) #Some IIDs are repeated, so need to sort this out#
+head(pcs)
+pcs <- pcs[,-3]
+dim(pcs) 
+
+##################################
+##Precorrect parental phenotypes##
+##################################
+
+# maternal Height #
+
+colnames(height)[2:3] <- c("MID", "mHEI")
+colnames(pcs)[1:2] <- c("FID","MID")
+
+dfm <- merge(height, pcs, by=c("FID","MID"))
+dfm <- dfm[complete.cases(dfm),]
+
+res <- lm(mHEI~C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20, data=dfm)
+summary(res)
+result <- data.frame(FID=dfm$FID, MID=dfm$MID, mHEI_res=residuals(res))
+result[,3] <- scale(result[,3])
+
+###
+colnames(pcs)[1:2] <- c("FID", "IID")
+pcs[3:22] <- scale(pcs[3:22])
+
+colnames(height) <- c("FID", "IID", "HEIGHT")
+height$HEIGHT <- scale(height$HEIGHT)
+
+df1 <- merge(df, height, by=c("FID", "IID"), all.x=T)
+
+colnames(height)[2:3] <- c("MID", "mHEI")
+df2 <- merge(df1, height, by=c("FID", "MID"), all.x=T)
+
+df3 <- merge(df2, sex, by=c("FID", "IID"), all.x=T)
+
+df4 <- merge(df3, age, by=c("FID", "IID"))
+
+colnames(age)[2:3] <- c("MID", "mAGE")
+df5 <- merge(df4, age, by=c("FID", "MID"))
+
+df6 <- merge(df5 , pcs, by=c("FID", "IID"))
+
+df7 <- merge(df6, result, by=c("FID", "MID"), all.x=T)
+
+colnames(hprs)[2:3] <- c("IID", "heiPRS_0.05")
+df8 <- merge(df7, hprs, by=c("FID", "IID"), all.x=T)
+
+colnames(hprs)[2:3] <- c("MID", "mheiPRS_0.05")
+df9 <- merge(df8, hprs, by=c("FID", "MID"), all.x=T)
+
+df9$NFID <- paste(df9$PID, df9$MID, sep="_")
+names(df9)
+
+write.table(df9, "IGE_height_pathway_matduo_df", row.names=F, quote=F) #n = 5952
+
+```
+
+## Pathway Model Dataframe (Paternal Duo)  
+
+```{r, eval=FALSE}
+
+rm(list=ls())
+library(dplyr)
+
+hprs <- read.table("GSheight.all.score", header=T)
+head(hprs)
+hprs <- hprs[,c(1:2,9)]
+colnames(hprs)[3] <- c("heiPRS_0.05")
+dim(hprs)
+hprs$heiPRS_0.05 <- scale(hprs$heiPRS_0.05)
+
+duo <- read.table("GS_pat_duo", header=T)
+df <- duo[,c(1:4)]
+
+height <- read.table("GSheight", header=T)
+outliers <- read.table("heightOUTLIERS", header=T)
+height <- height[!(height$IID%in%outliers$IID),]
+
+sex <- read.table("GS_SexClinic.fcovar", header=T)
+head(sex)
+sex <- sex[,c(1:3)]
+colnames(sex) <- c("FID", "IID", "SEX")
+sex$SEX <- as.factor(sex$SEX)
+dim(sex)
+
+age <- read.table("GS_Ages.qcovar", header=T)
+age <- age[,1:3]
+age$AGE <- scale(age$age)
+age <- age[,-3]
+colnames(age) <- c("FID", "IID", "AGE")
+
+pcs <- read.table("HM3mds.mds", header=T)
+pcs <- distinct(pcs, IID, .keep_all = TRUE) #Some IIDs are repeated, so need to sort this out#
+head(pcs)
+pcs <- pcs[,-3]
+dim(pcs) 
+
+##################################
+##Precorrect parental phenotypes##
+##################################
+
+# paternal Height #
+
+colnames(height)[2:3] <- c("PID", "pHEI")
+colnames(pcs)[1:2] <- c("FID","PID")
+
+dfp <- merge(height, pcs, by=c("FID","PID"))
+dfp <- dfp[complete.cases(dfp),]
+
+res <- lm(pHEI~C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20, data=dfp)
+summary(res)
+result <- data.frame(FID=dfp$FID, PID=dfp$PID, pHEI_res=residuals(res))
+result[,3] <- scale(result[,3])
+
+###
+colnames(pcs)[1:2] <- c("FID", "IID")
+pcs[3:22] <- scale(pcs[3:22])
+
+colnames(height) <- c("FID", "IID", "HEIGHT")
+height$HEIGHT <- scale(height$HEIGHT)
+
+df1 <- merge(df, height, by=c("FID", "IID"), all.x=T)
+
+colnames(height)[2:3] <- c("MID", "mHEI")
+df2 <- merge(df1, height, by=c("FID", "MID"), all.x=T)
+
+df3 <- merge(df2, sex, by=c("FID", "IID"), all.x=T)
+
+df4 <- merge(df3, age, by=c("FID", "IID"))
+
+colnames(age)[2:3] <- c("PID", "pAGE")
+df5 <- merge(df4, age, by=c("FID", "PID"))
+
+df6 <- merge(df5 , pcs, by=c("FID", "IID"))
+
+df7 <- merge(df6, result, by=c("FID", "PID"), all.x=T)
+
+colnames(hprs)[2:3] <- c("IID", "heiPRS_0.05")
+df8 <- merge(df7, hprs, by=c("FID", "IID"), all.x=T)
+
+colnames(hprs)[2:3] <- c("PID", "pheiPRS_0.05")
+df9 <- merge(df8, hprs, by=c("FID", "PID"), all.x=T)
+
+df9$NFID <- paste(df9$PID, df9$MID, sep="_")
+names(df9)
+
+write.table(df9, "IGE_height_pathway_patduo_df", row.names=F, quote=F) #n = 3865
+
+```
+
+# REGRESSION ANALYSES {.tabset}  
+
+**ALL VARIABLES ARE STANDARDISED - INTERPRET ACCORDINGLY**  
+Meaning as the IV increases by 1 standard deviation, the DV increases by Estimate*SD  
+All parent phenotypes are pre-corrected for their own 20 principle components and AGE
+
+A. oHEI ~ oPRS *This model captures direct GE*  
+B. oHEI ~ oPRS + mPRS + pPRS *This model captures both direct and indirect GE*  
+
+Models C and D can provide extra information  
+
+C. oHEI ~ oPRS + mHEI + pHEI  
+D. oHEI ~ oPRS + mHEI + pHEI + mPRS + pPRS  
+
+Comparison of the models using log likelihood can help us infer whether the effects of indirect genetic effects are present (specifically comparison of model A vs B)  
+
+There are siblings in my trio offsprings. It is important to control for these sibling effects which may bias the interpretation of results. Sibling effects will be fitted as random effects in these models. The package lmerTest will be used. Siblings have the same parent IDs, so we can use this as an indicator variable that can be fixed as random.  
+
+## Whole Sample  
+
+```{r, eval=FALSE}
+rm(list=ls())
+
+library(lmerTest) #this package allows us to run regression models with fixed and random effects
+library(MuMIn) #this package allows us to obtain the R2 of our models, R2m (Marginal) R2 > fixed effects, R2c (Conditional) > whole model
+library(dplyr)
+
+regdf <- read.table("IGE_height_regression_df", header=T) #n=2648
+
+#Model 0 is to understand the variance that is being accounted for by the covariates 
+Model0 <- lmer(HEIGHT~C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20+AGE+SEX+(1|NFID), data=regdf)
+
+#only including results of AGE and SEX as this information is easy to understand and important
+results_0 <- cbind(as.data.frame(coef(summary(Model0))[c(1,22,23),]),as.data.frame(r.squaredGLMM(Model0)))
+results_0$Model <- "Model0"
+
+ModelA <- lmer(HEIGHT~C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20+AGE+SEX+heiPRS_0.05+(1|NFID), data=regdf)
+results_A <- cbind(as.data.frame(coef(summary(ModelA))[c(1,24),]),as.data.frame(r.squaredGLMM(ModelA)))
+results_A$Model <- "ModelA"
+
+ModelB <- lmer(HEIGHT~C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20+AGE+SEX+heiPRS_0.05+mheiPRS_0.05+pheiPRS_0.05+(1|NFID), data=regdf)   
+results_B <- cbind(as.data.frame(coef(summary(ModelB))[c(1,24:26),]),as.data.frame(r.squaredGLMM(ModelB)))
+results_B$Model <- "ModelB"
+  
+ModelC <- lmer(HEIGHT~C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20+AGE+SEX+heiPRS_0.05+mHEI_res+pHEI_res+(1|NFID), data=regdf)   
+results_C <- cbind(as.data.frame(coef(summary(ModelC))[c(1,24:26),]),as.data.frame(r.squaredGLMM(ModelC)))
+results_C$Model <- "ModelC"
+
+ModelD <- lmer(HEIGHT~C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20+AGE+SEX+heiPRS_0.05+mheiPRS_0.05+pheiPRS_0.05+mHEI_res+pHEI_res+(1|NFID), data=regdf)   
+results_D <- cbind(as.data.frame(coef(summary(ModelD))[c(1,24:28),]),as.data.frame(r.squaredGLMM(ModelD)))
+results_D$Model <- "ModelD"
+
+results <- bind_rows(results_0, results_A, results_B, results_C, results_D)
+write.csv(results, "heiPRS_0.05_reg_mixed_models.csv", row.names=T, quote=F)
+
+avb <- as.data.frame(anova(ModelA, ModelB))
+avb$comparison <- "A_v_B"
+
+avc <- as.data.frame(anova(ModelA, ModelC))
+avc$comparison <- "A_v_C"
+
+avd <- as.data.frame(anova(ModelA, ModelD))
+avd$comparison <- "A_v_D"
+
+bvc <- as.data.frame(anova(ModelB, ModelC))
+bvc$comparison <- "B_v_C"
+
+bvd <- as.data.frame(anova(ModelB, ModelD))
+bvd$comparison <- "B_v_D"
+
+cvd <- as.data.frame(anova(ModelC, ModelD))
+cvd$comparison <- "C_v_D"
+
+results <- bind_rows(avb, avc, avd, bvc, bvd, cvd)
+results[8,8] <- NA
+results$fdr <- p.adjust(results$`Pr(>Chisq)`, method="fdr", n=length(results$`Pr(>Chisq)`))
+write.csv(results, "heiPRS_0.05_reg_mixed_model_comparison.csv", row.names=T, quote=F)
+
+```
+
+![.](./HeightResults/Slide4.PNG)  
+
+## Female Only Sample  
+
+Results for the following can be found in the supplementary materials sheet 3  
+  
+Even though sex is being controlled for in the above analyses, the analyses will be run separately in male and female offspring to explore any potential differences in the model results and comparisons.  
+
+```{r, eval=FALSE}
+rm(list=ls())
+
+library(lmerTest) #this package allows us to run regression models with fixed and random effects
+library(MuMIn) #this package allows us to obtain the R2 of our models, R2m (Marginal) R2 > fixed effects, R2c (Conditional) > whole model
+library(dplyr)
+
+regdf <- read.table("IGE_height_regression_df", header=T)
+regdf <- subset(regdf, regdf$SEX=="F") #n= 1498
+
+#Model 0 is to understand the variance that is being accounted for by the covariates 
+Model0 <- lmer(HEIGHT~C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20+AGE+(1|NFID), data=regdf)
+
+#only including results of AGE and SEX as this information is easy to understand and important
+results_0 <- cbind(as.data.frame(coef(summary(Model0))[c(1,21,22),]),as.data.frame(r.squaredGLMM(Model0)))
+results_0$Model <- "Model0"
+
+ModelA <- lmer(HEIGHT~C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20+AGE+heiPRS_0.05+(1|NFID), data=regdf)
+results_A <- cbind(as.data.frame(coef(summary(ModelA))[c(1,23),]),as.data.frame(r.squaredGLMM(ModelA)))
+results_A$Model <- "ModelA"
+
+ModelB <- lmer(HEIGHT~C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20+AGE+heiPRS_0.05+mheiPRS_0.05+pheiPRS_0.05+(1|NFID), data=regdf)   
+results_B <- cbind(as.data.frame(coef(summary(ModelB))[c(1,23:25),]),as.data.frame(r.squaredGLMM(ModelB)))
+results_B$Model <- "ModelB"
+  
+ModelC <- lmer(HEIGHT~C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20+AGE+heiPRS_0.05+mHEI_res+pHEI_res+(1|NFID), data=regdf)   
+results_C <- cbind(as.data.frame(coef(summary(ModelC))[c(1,23:25),]),as.data.frame(r.squaredGLMM(ModelC)))
+results_C$Model <- "ModelC"
+
+ModelD <- lmer(HEIGHT~C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20+AGE+heiPRS_0.05+mheiPRS_0.05+pheiPRS_0.05+mHEI_res+pHEI_res+(1|NFID), data=regdf)   
+results_D <- cbind(as.data.frame(coef(summary(ModelD))[c(1,23:27),]),as.data.frame(r.squaredGLMM(ModelD)))
+results_D$Model <- "ModelD"
+
+results <- bind_rows(results_0, results_A, results_B, results_C, results_D)
+write.csv(results, "heiPRS_0.05_reg_mixed_models_FEMALE.csv", row.names=T, quote=F)
+
+avb <- as.data.frame(anova(ModelA, ModelB))
+avb$comparison <- "A_v_B"
+
+avc <- as.data.frame(anova(ModelA, ModelC))
+avc$comparison <- "A_v_C"
+
+avd <- as.data.frame(anova(ModelA, ModelD))
+avd$comparison <- "A_v_D"
+
+bvc <- as.data.frame(anova(ModelB, ModelC))
+bvc$comparison <- "B_v_C"
+
+bvd <- as.data.frame(anova(ModelB, ModelD))
+bvd$comparison <- "B_v_D"
+
+cvd <- as.data.frame(anova(ModelC, ModelD))
+cvd$comparison <- "C_v_D"
+
+results <- bind_rows(avb, avc, avd, bvc, bvd, cvd)
+results[8,8] <- NA
+results$fdr <- p.adjust(results$`Pr(>Chisq)`, method="fdr", n=length(results$`Pr(>Chisq)`))
+write.csv(results, "heiPRS_0.05_reg_mixed_model_comparison_FEMALE.csv", row.names=T, quote=F)
+
+```
+
+## Male Only Sample  
+
+```{r, eval=FALSE}
+rm(list=ls())
+
+library(lmerTest) #this package allows us to run regression models with fixed and random effects
+library(MuMIn) #this package allows us to obtain the R2 of our models, R2m (Marginal) R2 > fixed effects, R2c (Conditional) > whole model
+library(dplyr)
+
+regdf <- read.table("IGE_height_regression_df", header=T)
+regdf <- subset(regdf, regdf$SEX=="M") #n= 1150
+
+#Model 0 is to understand the variance that is being accounted for by the covariates 
+Model0 <- lmer(HEIGHT~C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20+AGE+(1|NFID), data=regdf)
+
+#only including results of AGE and SEX as this information is easy to understand and important
+results_0 <- cbind(as.data.frame(coef(summary(Model0))[c(1,21,22),]),as.data.frame(r.squaredGLMM(Model0)))
+results_0$Model <- "Model0"
+
+ModelA <- lmer(HEIGHT~C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20+AGE+heiPRS_0.05+(1|NFID), data=regdf)
+results_A <- cbind(as.data.frame(coef(summary(ModelA))[c(1,23),]),as.data.frame(r.squaredGLMM(ModelA)))
+results_A$Model <- "ModelA"
+
+ModelB <- lmer(HEIGHT~C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20+AGE+heiPRS_0.05+mheiPRS_0.05+pheiPRS_0.05+(1|NFID), data=regdf)   
+results_B <- cbind(as.data.frame(coef(summary(ModelB))[c(1,23:25),]),as.data.frame(r.squaredGLMM(ModelB)))
+results_B$Model <- "ModelB"
+  
+ModelC <- lmer(HEIGHT~C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20+AGE+heiPRS_0.05+mHEI_res+pHEI_res+(1|NFID), data=regdf)   
+results_C <- cbind(as.data.frame(coef(summary(ModelC))[c(1,23:25),]),as.data.frame(r.squaredGLMM(ModelC)))
+results_C$Model <- "ModelC"
+
+ModelD <- lmer(HEIGHT~C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20+AGE+heiPRS_0.05+mheiPRS_0.05+pheiPRS_0.05+mHEI_res+pHEI_res+(1|NFID), data=regdf)   
+results_D <- cbind(as.data.frame(coef(summary(ModelD))[c(1,23:27),]),as.data.frame(r.squaredGLMM(ModelD)))
+results_D$Model <- "ModelD"
+
+results <- bind_rows(results_0, results_A, results_B, results_C, results_D)
+write.csv(results, "heiPRS_0.05_reg_mixed_models_MALE.csv", row.names=T, quote=F)
+
+avb <- as.data.frame(anova(ModelA, ModelB))
+avb$comparison <- "A_v_B"
+
+avc <- as.data.frame(anova(ModelA, ModelC))
+avc$comparison <- "A_v_C"
+
+avd <- as.data.frame(anova(ModelA, ModelD))
+avd$comparison <- "A_v_D"
+
+bvc <- as.data.frame(anova(ModelB, ModelC))
+bvc$comparison <- "B_v_C"
+
+bvd <- as.data.frame(anova(ModelB, ModelD))
+bvd$comparison <- "B_v_D"
+
+cvd <- as.data.frame(anova(ModelC, ModelD))
+cvd$comparison <- "C_v_D"
+
+results <- bind_rows(avb, avc, avd, bvc, bvd, cvd)
+results[8,8] <- NA
+results$fdr <- p.adjust(results$`Pr(>Chisq)`, method="fdr", n=length(results$`Pr(>Chisq)`))
+write.csv(results, "heiPRS_0.05_reg_mixed_model_comparison_MALE.csv", row.names=T, quote=F)
+
+```
+
+# PATHWAY ANALYSES {.tabset}  
+
+Pathway analyses can model the relationships between the IVs unlike regression models. Coefficients, however, can be interpreted in the same way you would with regression models.  
+
+We will explore 3 different pathway models  
+
+Simple model  
+![.](./HeightResults/Slide5.PNG)
+Extended (Restricted) model   
+![.](./HeightResults/Slide6.PNG)
+Extended model  
+![.](./HeightResults/Slide7.PNG)
+
+## Paths a,d Restricted  
+
+Pathway analyses need to be run with SEs bootstrapped. We will also fix pathways a and d to 0.5 as the effect of parental PRS on offspring PRS should be 0.5 as each parent passes on 50% of their genome to the offspring. This will also mean we more degrees of freedom which impacts the analysis power to avoid type 1 and type 2 errors.  
+
+Note that parent phenotypes are pre-corrected for their own 20 principle components from a GRM of Generation Scotland. The phenotype was not pre-corrected for AGE, instead, this was included in the statistical model as this could provide useful information without making the results difficult to read.  
+
+
+```{r, eval=FALSE}
+
+rm(list=ls())
+library(lavaan)
+
+data <- read.table("IGE_height_pathway_analysis_df", header=T)
+data <- data[complete.cases(data),] #n=2648
+
+##############
+#SIMPLE MODEL#
+##############
+
+# Define model
+
+model <- ' 
+
+# direct effects
+HEIGHT ~ AGE+SEX+C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20
+HEIGHT ~ c*mheiPRS_0.05
+HEIGHT ~ f*pheiPRS_0.05             
+
+# mediator
+heiPRS_0.05 ~ 0.5*mheiPRS_0.05
+heiPRS_0.05 ~ 0.5*pheiPRS_0.05
+HEIGHT ~ b*heiPRS_0.05
+
+# indirect effects (a*b, d*b)
+ab := 0.5*b
+db := 0.5*b
+
+# total effects 
+total_mum := c + (0.5*b)
+total_dad := f + (0.5*b)
+
+# covariance
+mheiPRS_0.05 ~~ pheiPRS_0.05
+'
+
+# Fit the model
+fitM <- sem(model, data=data, se="bootstrap", estimator='ML')
+
+sem_model <- summary(fitM, standardized=TRUE, fit.measures=TRUE, ci=TRUE)
+sem_model_df <- as.data.frame(sem_model$PE)
+sem_model_final <- sem_model_df[sem_model_df$label != "", c(1:4,6:7,9:11)] #here we are extracting values of interest e.g. est, se, p, ci
+simple_model <- cbind(sem_model_final, AIC(fitM))
+
+write.csv(simple_model, "heiPRS_0.05_pa_m1_bs.csv", row.names=F, quote=F)
+
+################
+#EXTENDED MODEL#
+################
+
+rm(list=ls())
+data <- read.table("IGE_height_pathway_analysis_df", header=T)
+data <- data[complete.cases(data),]
+
+# Define model
+
+model <- '
+
+#direct effects
+HEIGHT ~ AGE+SEX+C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20
+HEIGHT ~ c*mheiPRS_0.05
+HEIGHT ~ f*pheiPRS_0.05         
+
+#mediator
+heiPRS_0.05 ~ 0.5*mheiPRS_0.05
+heiPRS_0.05 ~ 0.5*pheiPRS_0.05 
+
+HEIGHT ~ b*heiPRS_0.05
+
+pHEI_res ~ g*pheiPRS_0.05+pAGE
+mHEI_res ~ h*mheiPRS_0.05+mAGE
+
+HEIGHT ~ i*pHEI_res
+HEIGHT ~ j*mHEI_res
+
+# indirect effects (a*b, d*b)
+ab := 0.5*b
+db := 0.5*b
+gi := g*i
+hj := h*j
+
+
+# total effects 
+total_mum := c + (0.5*b) + (h*j) ###### THIS IS WHAT I HAVE ADDED - NOT SURE IF ITS RIGHT THO #####
+total_dad := f + (0.5*b) + (g*i) ###### THIS IS WHAT I HAVE ADDED - NOT SURE IF ITS RIGHT THO #####
+
+# covariance
+mheiPRS_0.05 ~~ pheiPRS_0.05
+mHEI_res ~~ pHEI_res
+
+'
+
+# Fit the model
+fitM <- sem(model, data=data, se="bootstrap", estimator='ML')
+sem_model <- summary(fitM, standardized=TRUE, fit.measures=TRUE, ci=TRUE)
+sem_model_df <- as.data.frame(sem_model$PE)
+sem_model_final <- sem_model_df[sem_model_df$label != "", c(1:4,6:7,9:11)] #here we are extracting values of interest e.g. est, se, p, ci
+extended_model <- cbind(sem_model_final, AIC(fitM))
+
+write.csv(extended_model, "heiPRS_0.05_pa_m2_bs.csv", row.names=F, quote=F)
+
+#############################
+#EXTENDED (RESTRICTED) MODEL#
+#############################
+
+rm(list=ls())
+data <- read.table("IGE_height_pathway_analysis_df", header=T)
+data <- data[complete.cases(data),]
+
+# Define model
+
+model <- ' 
+
+#direct effects
+HEIGHT ~ AGE+SEX+C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20
+
+#mediator
+heiPRS_0.05 ~ 0.5*mheiPRS_0.05
+heiPRS_0.05 ~ 0.5*pheiPRS_0.05
+
+HEIGHT ~ b*heiPRS_0.05
+
+pHEI_res ~ g*pheiPRS_0.05+pAGE
+mHEI_res ~ h*mheiPRS_0.05+mAGE
+
+HEIGHT ~ i*pHEI_res
+HEIGHT ~ j*mHEI_res
+
+# indirect effects (a*b, d*b)
+ab := 0.5*b
+db := 0.5*b
+gi := g*i
+hj := h*j
+
+
+# total effects 
+total_mum := (0.5*b) + (h*j) ###### THIS IS WHAT I HAVE ADDED - NOT SURE IF ITS RIGHT THO #####
+total_dad := (0.5*b) + (g*i) ###### THIS IS WHAT I HAVE ADDED - NOT SURE IF ITS RIGHT THO #####
+
+# covariance
+mheiPRS_0.05 ~~ pheiPRS_0.05
+mHEI_res ~~ pHEI_res
+'
+
+# Fit the model
+fitM <- sem(model, data=data, se="bootstrap", estimator='ML')
+sem_model <- summary(fitM, standardized=TRUE, fit.measures=TRUE, ci=TRUE)
+sem_model_df <- as.data.frame(sem_model$PE)
+sem_model_final <- sem_model_df[sem_model_df$label != "", c(1:4,6:7,9:11)] #here we are extracting values of interest e.g. est, se, p, ci
+extended_restricted_model <- cbind(sem_model_final, AIC(fitM))
+
+write.csv(extended_restricted_model, "heiPRS_0.05_pa_m3_bs.csv", row.names=F, quote=F)
+```
+
+![.](./HeightResults/Slide8.PNG)
+
+## Paths Freely Estimated  
+
+Results for subsequent sanity check analyses can be found in the supplementary materials    
+
+For a sanity check, the pathway models will be implemented where all paths are freely estimated. We are interested, particularly, in paths a and d, are the free estimations in line with what we expect ~0.5?  
+
+```{r, eval=FALSE}
+
+rm(list=ls())
+library(lavaan)
+
+data <- read.table("IGE_height_pathway_analysis_df", header=T)
+data <- data[complete.cases(data),] #n=2648
+
+##############
+#SIMPLE MODEL#
+##############
+
+# Define model
+
+model <- ' 
+
+# direct effects
+HEIGHT ~ AGE+SEX+C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20
+HEIGHT ~ c*mheiPRS_0.05
+HEIGHT ~ f*pheiPRS_0.05             
+
+# mediator
+heiPRS_0.05 ~ a*mheiPRS_0.05
+heiPRS_0.05 ~ d*pheiPRS_0.05
+HEIGHT ~ b*heiPRS_0.05
+
+# indirect effects (a*b, d*b)
+ab := a*b
+db := d*b
+
+# total effects 
+total_mum := c + (a*b)
+total_dad := f + (d*b)
+
+# covariance
+mheiPRS_0.05 ~~ pheiPRS_0.05
+'
+
+# Fit the model
+fitM <- sem(model, data=data, se="bootstrap", estimator='ML')
+
+sem_model <- summary(fitM, standardized=TRUE, fit.measures=TRUE, ci=TRUE)
+sem_model_df <- as.data.frame(sem_model$PE)
+sem_model_final <- sem_model_df[sem_model_df$label != "", c(1:4,6:7,9:11)] #here we are extracting values of interest e.g. est, se, p, ci
+simple_model <- cbind(sem_model_final, AIC(fitM))
+
+write.csv(simple_model, "heiPRS_0.05_pa_m1_bs_fm.csv", row.names=F, quote=F) #fm stands for free model
+
+################
+#EXTENDED MODEL#
+################
+
+rm(list=ls())
+data <- read.table("IGE_height_pathway_analysis_df", header=T)
+data <- data[complete.cases(data),]
+
+# Define model
+
+model <- '
+
+#direct effects
+HEIGHT ~ AGE+SEX+C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20
+HEIGHT ~ c*mheiPRS_0.05
+HEIGHT ~ f*pheiPRS_0.05         
+
+#mediator
+heiPRS_0.05 ~ a*mheiPRS_0.05
+heiPRS_0.05 ~ d*pheiPRS_0.05 
+
+HEIGHT ~ b*heiPRS_0.05
+
+pHEI_res ~ g*pheiPRS_0.05+pAGE
+mHEI_res ~ h*mheiPRS_0.05+mAGE
+
+HEIGHT ~ i*pHEI_res
+HEIGHT ~ j*mHEI_res
+
+# indirect effects (a*b, d*b)
+ab := a*b
+db := d*b
+gi := g*i
+hj := h*j
+
+
+# total effects 
+total_mum := c + (a*b) + (h*j) ###### THIS IS WHAT I HAVE ADDED - NOT SURE IF ITS RIGHT THO #####
+total_dad := f + (d*b) + (g*i) ###### THIS IS WHAT I HAVE ADDED - NOT SURE IF ITS RIGHT THO #####
+
+# covariance
+mheiPRS_0.05 ~~ pheiPRS_0.05
+mHEI_res ~~ pHEI_res
+
+'
+
+# Fit the model
+fitM <- sem(model, data=data, se="bootstrap", estimator='ML')
+sem_model <- summary(fitM, standardized=TRUE, fit.measures=TRUE, ci=TRUE)
+sem_model_df <- as.data.frame(sem_model$PE)
+sem_model_final <- sem_model_df[sem_model_df$label != "", c(1:4,6:7,9:11)] #here we are extracting values of interest e.g. est, se, p, ci
+extended_model <- cbind(sem_model_final, AIC(fitM))
+
+write.csv(extended_model, "heiPRS_0.05_pa_m2_bs_fm.csv", row.names=F, quote=F)
+
+#############################
+#EXTENDED (RESTRICTED) MODEL#
+#############################
+
+rm(list=ls())
+data <- read.table("IGE_height_pathway_analysis_df", header=T)
+data <- data[complete.cases(data),]
+
+# Define model
+
+model <- ' 
+
+#direct effects
+HEIGHT ~ AGE+SEX+C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20
+
+#mediator
+heiPRS_0.05 ~ a*mheiPRS_0.05
+heiPRS_0.05 ~ d*pheiPRS_0.05
+
+HEIGHT ~ b*heiPRS_0.05
+
+pHEI_res ~ g*pheiPRS_0.05+pAGE
+mHEI_res ~ h*mheiPRS_0.05+mAGE
+
+HEIGHT ~ i*pHEI_res
+HEIGHT ~ j*mHEI_res
+
+# indirect effects (a*b, d*b)
+ab := a*b
+db := d*b
+gi := g*i
+hj := h*j
+
+
+# total effects 
+total_mum := (a*b) + (h*j) ###### THIS IS WHAT I HAVE ADDED - NOT SURE IF ITS RIGHT THO #####
+total_dad := (d*b) + (g*i) ###### THIS IS WHAT I HAVE ADDED - NOT SURE IF ITS RIGHT THO #####
+
+# covariance
+mheiPRS_0.05 ~~ pheiPRS_0.05
+mHEI_res ~~ pHEI_res
+'
+
+# Fit the model
+fitM <- sem(model, data=data, se="bootstrap", estimator='ML')
+sem_model <- summary(fitM, standardized=TRUE, fit.measures=TRUE, ci=TRUE)
+sem_model_df <- as.data.frame(sem_model$PE)
+sem_model_final <- sem_model_df[sem_model_df$label != "", c(1:4,6:7,9:11)] #here we are extracting values of interest e.g. est, se, p, ci
+extended_restricted_model <- cbind(sem_model_final, AIC(fitM))
+
+write.csv(extended_restricted_model, "heiPRS_0.05_pa_m3_bs_fm.csv", row.names=F, quote=F)
+```
+ 
+## Female Only Sample  
+
+```{r, eval=FALSE}
+
+rm(list=ls())
+library(lavaan)
+
+data <- read.table("IGE_height_pathway_analysis_df", header=T)
+data <- subset(data, data$SEX=="F")
+data <- data[complete.cases(data),] #n=1498
+
+##############
+#SIMPLE MODEL#
+##############
+
+# Define model
+
+model <- ' 
+
+# direct effects
+HEIGHT ~ AGE+C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20
+HEIGHT ~ c*mheiPRS_0.05
+HEIGHT ~ f*pheiPRS_0.05             
+
+# mediator
+heiPRS_0.05 ~ 0.5*mheiPRS_0.05
+heiPRS_0.05 ~ 0.5*pheiPRS_0.05
+HEIGHT ~ b*heiPRS_0.05
+
+# indirect effects (a*b, d*b)
+ab := 0.5*b
+db := 0.5*b
+
+# total effects 
+total_mum := c + (0.5*b)
+total_dad := f + (0.5*b)
+
+# covariance
+mheiPRS_0.05 ~~ pheiPRS_0.05
+'
+
+# Fit the model
+fitM <- sem(model, data=data, se="bootstrap", estimator='ML')
+
+sem_model <- summary(fitM, standardized=TRUE, fit.measures=TRUE, ci=TRUE)
+sem_model_df <- as.data.frame(sem_model$PE)
+sem_model_final <- sem_model_df[sem_model_df$label != "", c(1:4,6:7,9:11)] #here we are extracting values of interest e.g. est, se, p, ci
+simple_model <- cbind(sem_model_final, AIC(fitM))
+
+write.csv(simple_model, "heiPRS_0.05_pa_m1_bs_FEMALE.csv", row.names=F, quote=F)
+
+################
+#EXTENDED MODEL#
+################
+
+rm(list=ls())
+data <- read.table("IGE_height_pathway_analysis_df", header=T)
+data <- subset(data, data$SEX=="F")
+data <- data[complete.cases(data),] #n=1498
+
+# Define model
+
+model <- '
+
+#direct effects
+HEIGHT ~ AGE+C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20
+HEIGHT ~ c*mheiPRS_0.05
+HEIGHT ~ f*pheiPRS_0.05         
+
+#mediator
+heiPRS_0.05 ~ 0.5*mheiPRS_0.05
+heiPRS_0.05 ~ 0.5*pheiPRS_0.05 
+
+HEIGHT ~ b*heiPRS_0.05
+
+pHEI_res ~ g*pheiPRS_0.05+pAGE
+mHEI_res ~ h*mheiPRS_0.05+mAGE
+
+HEIGHT ~ i*pHEI_res
+HEIGHT ~ j*mHEI_res
+
+# indirect effects (a*b, d*b)
+ab := 0.5*b
+db := 0.5*b
+gi := g*i
+hj := h*j
+
+
+# total effects 
+total_mum := c + (0.5*b) + (h*j) ###### THIS IS WHAT I HAVE ADDED - NOT SURE IF ITS RIGHT THO #####
+total_dad := f + (0.5*b) + (g*i) ###### THIS IS WHAT I HAVE ADDED - NOT SURE IF ITS RIGHT THO #####
+
+# covariance
+mheiPRS_0.05 ~~ pheiPRS_0.05
+mHEI_res ~~ pHEI_res
+
+'
+
+# Fit the model
+fitM <- sem(model, data=data, se="bootstrap", estimator='ML')
+sem_model <- summary(fitM, standardized=TRUE, fit.measures=TRUE, ci=TRUE)
+sem_model_df <- as.data.frame(sem_model$PE)
+sem_model_final <- sem_model_df[sem_model_df$label != "", c(1:4,6:7,9:11)] #here we are extracting values of interest e.g. est, se, p, ci
+extended_model <- cbind(sem_model_final, AIC(fitM))
+
+write.csv(extended_model, "heiPRS_0.05_pa_m2_bs_FEMALE.csv", row.names=F, quote=F)
+
+#############################
+#EXTENDED (RESTRICTED) MODEL#
+#############################
+
+rm(list=ls())
+data <- read.table("IGE_height_pathway_analysis_df", header=T)
+data <- subset(data, data$SEX=="F")
+data <- data[complete.cases(data),] #n=1498
+
+# Define model
+
+model <- ' 
+
+#direct effects
+HEIGHT ~ AGE+C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20
+
+#mediator
+heiPRS_0.05 ~ 0.5*mheiPRS_0.05
+heiPRS_0.05 ~ 0.5*pheiPRS_0.05
+
+HEIGHT ~ b*heiPRS_0.05
+
+pHEI_res ~ g*pheiPRS_0.05+pAGE
+mHEI_res ~ h*mheiPRS_0.05+mAGE
+
+HEIGHT ~ i*pHEI_res
+HEIGHT ~ j*mHEI_res
+
+# indirect effects (a*b, d*b)
+ab := 0.5*b
+db := 0.5*b
+gi := g*i
+hj := h*j
+
+
+# total effects 
+total_mum := (0.5*b) + (h*j) ###### THIS IS WHAT I HAVE ADDED - NOT SURE IF ITS RIGHT THO #####
+total_dad := (0.5*b) + (g*i) ###### THIS IS WHAT I HAVE ADDED - NOT SURE IF ITS RIGHT THO #####
+
+# covariance
+mheiPRS_0.05 ~~ pheiPRS_0.05
+mHEI_res ~~ pHEI_res
+'
+
+# Fit the model
+fitM <- sem(model, data=data, se="bootstrap", estimator='ML')
+sem_model <- summary(fitM, standardized=TRUE, fit.measures=TRUE, ci=TRUE)
+sem_model_df <- as.data.frame(sem_model$PE)
+sem_model_final <- sem_model_df[sem_model_df$label != "", c(1:4,6:7,9:11)] #here we are extracting values of interest e.g. est, se, p, ci
+extended_restricted_model <- cbind(sem_model_final, AIC(fitM))
+
+write.csv(extended_restricted_model, "heiPRS_0.05_pa_m3_bs_FEMALE.csv", row.names=F, quote=F)
+
+```
+
+## Male Only Sample  
+
+```{r, eval=FALSE}
+
+rm(list=ls())
+library(lavaan)
+
+data <- read.table("IGE_height_pathway_analysis_df", header=T)
+data <- subset(data, data$SEX=="M")
+data <- data[complete.cases(data),] ##n=1150
+
+##############
+#SIMPLE MODEL#
+##############
+
+# Define model
+
+model <- ' 
+
+# direct effects
+HEIGHT ~ AGE+C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20
+HEIGHT ~ c*mheiPRS_0.05
+HEIGHT ~ f*pheiPRS_0.05             
+
+# mediator
+heiPRS_0.05 ~ 0.5*mheiPRS_0.05
+heiPRS_0.05 ~ 0.5*pheiPRS_0.05
+HEIGHT ~ b*heiPRS_0.05
+
+# indirect effects (a*b, d*b)
+ab := 0.5*b
+db := 0.5*b
+
+# total effects 
+total_mum := c + (0.5*b)
+total_dad := f + (0.5*b)
+
+# covariance
+mheiPRS_0.05 ~~ pheiPRS_0.05
+'
+
+# Fit the model
+fitM <- sem(model, data=data, se="bootstrap", estimator='ML')
+
+sem_model <- summary(fitM, standardized=TRUE, fit.measures=TRUE, ci=TRUE)
+sem_model_df <- as.data.frame(sem_model$PE)
+sem_model_final <- sem_model_df[sem_model_df$label != "", c(1:4,6:7,9:11)] #here we are extracting values of interest e.g. est, se, p, ci
+simple_model <- cbind(sem_model_final, AIC(fitM))
+
+write.csv(simple_model, "heiPRS_0.05_pa_m1_bs_MALE.csv", row.names=F, quote=F)
+
+################
+#EXTENDED MODEL#
+################
+
+rm(list=ls())
+data <- read.table("IGE_height_pathway_analysis_df", header=T)
+data <- subset(data, data$SEX=="M")
+data <- data[complete.cases(data),] ##n=1150
+
+# Define model
+
+model <- '
+
+#direct effects
+HEIGHT ~ AGE+C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20
+HEIGHT ~ c*mheiPRS_0.05
+HEIGHT ~ f*pheiPRS_0.05         
+
+#mediator
+heiPRS_0.05 ~ 0.5*mheiPRS_0.05
+heiPRS_0.05 ~ 0.5*pheiPRS_0.05 
+
+HEIGHT ~ b*heiPRS_0.05
+
+pHEI_res ~ g*pheiPRS_0.05+pAGE
+mHEI_res ~ h*mheiPRS_0.05+mAGE
+
+HEIGHT ~ i*pHEI_res
+HEIGHT ~ j*mHEI_res
+
+# indirect effects (a*b, d*b)
+ab := 0.5*b
+db := 0.5*b
+gi := g*i
+hj := h*j
+
+
+# total effects 
+total_mum := c + (0.5*b) + (h*j) ###### THIS IS WHAT I HAVE ADDED - NOT SURE IF ITS RIGHT THO #####
+total_dad := f + (0.5*b) + (g*i) ###### THIS IS WHAT I HAVE ADDED - NOT SURE IF ITS RIGHT THO #####
+
+# covariance
+mheiPRS_0.05 ~~ pheiPRS_0.05
+mHEI_res ~~ pHEI_res
+
+'
+
+# Fit the model
+fitM <- sem(model, data=data, se="bootstrap", estimator='ML')
+sem_model <- summary(fitM, standardized=TRUE, fit.measures=TRUE, ci=TRUE)
+sem_model_df <- as.data.frame(sem_model$PE)
+sem_model_final <- sem_model_df[sem_model_df$label != "", c(1:4,6:7,9:11)] #here we are extracting values of interest e.g. est, se, p, ci
+extended_model <- cbind(sem_model_final, AIC(fitM))
+
+write.csv(extended_model, "heiPRS_0.05_pa_m2_bs_MALE.csv", row.names=F, quote=F)
+
+#############################
+#EXTENDED (RESTRICTED) MODEL#
+#############################
+
+rm(list=ls())
+data <- read.table("IGE_height_pathway_analysis_df", header=T)
+data <- subset(data, data$SEX=="M")
+data <- data[complete.cases(data),] #n=1150
+
+# Define model
+
+model <- ' 
+
+#direct effects
+HEIGHT ~ AGE+C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20
+
+#mediator
+heiPRS_0.05 ~ 0.5*mheiPRS_0.05
+heiPRS_0.05 ~ 0.5*pheiPRS_0.05
+
+HEIGHT ~ b*heiPRS_0.05
+
+pHEI_res ~ g*pheiPRS_0.05+pAGE
+mHEI_res ~ h*mheiPRS_0.05+mAGE
+
+HEIGHT ~ i*pHEI_res
+HEIGHT ~ j*mHEI_res
+
+# indirect effects (a*b, d*b)
+ab := 0.5*b
+db := 0.5*b
+gi := g*i
+hj := h*j
+
+
+# total effects 
+total_mum := (0.5*b) + (h*j) ###### THIS IS WHAT I HAVE ADDED - NOT SURE IF ITS RIGHT THO #####
+total_dad := (0.5*b) + (g*i) ###### THIS IS WHAT I HAVE ADDED - NOT SURE IF ITS RIGHT THO #####
+
+# covariance
+mheiPRS_0.05 ~~ pheiPRS_0.05
+mHEI_res ~~ pHEI_res
+'
+
+# Fit the model
+fitM <- sem(model, data=data, se="bootstrap", estimator='ML')
+sem_model <- summary(fitM, standardized=TRUE, fit.measures=TRUE, ci=TRUE)
+sem_model_df <- as.data.frame(sem_model$PE)
+sem_model_final <- sem_model_df[sem_model_df$label != "", c(1:4,6:7,9:11)] #here we are extracting values of interest e.g. est, se, p, ci
+extended_restricted_model <- cbind(sem_model_final, AIC(fitM))
+
+write.csv(extended_restricted_model, "heiPRS_0.05_pa_m3_bs_MALE.csv", row.names=F, quote=F)
+
+```
+
+## Singleton Sample    
+
+Removing siblings to double check that estimates do not change substantially  
+
+```{r, eval=FALSE}
+
+rm(list=ls())
+library(lavaan)
+library(dplyr)
+data <- read.table("IGE_height_pathway_analysis_df", header=T)
+data <- data[!duplicated(data$NFID),] #removing 1 individual from a sibling group
+data <- data[complete.cases(data),] #n=1579
+
+##############
+#SIMPLE MODEL#
+##############
+
+# Define model
+
+model <- ' 
+
+# direct effects
+HEIGHT ~ AGE+SEX+C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20
+HEIGHT ~ c*mheiPRS_0.05
+HEIGHT ~ f*pheiPRS_0.05             
+
+# mediator
+heiPRS_0.05 ~ 0.5*mheiPRS_0.05
+heiPRS_0.05 ~ 0.5*pheiPRS_0.05
+HEIGHT ~ b*heiPRS_0.05
+
+# indirect effects (a*b, d*b)
+ab := 0.5*b
+db := 0.5*b
+
+# total effects 
+total_mum := c + (0.5*b)
+total_dad := f + (0.5*b)
+
+# covariance
+mheiPRS_0.05 ~~ pheiPRS_0.05
+'
+
+# Fit the model
+fitM <- sem(model, data=data, se="bootstrap", estimator='ML')
+
+sem_model <- summary(fitM, standardized=TRUE, fit.measures=TRUE, ci=TRUE)
+sem_model_df <- as.data.frame(sem_model$PE)
+sem_model_final <- sem_model_df[sem_model_df$label != "", c(1:4,6:7,9:11)] #here we are extracting values of interest e.g. est, se, p, ci
+simple_model <- cbind(sem_model_final, AIC(fitM))
+
+write.csv(simple_model, "heiPRS_0.05_pa_m1_bs_nosib.csv", row.names=F, quote=F)
+
+################
+#EXTENDED MODEL#
+################
+
+rm(list=ls())
+data <- read.table("IGE_height_pathway_analysis_df", header=T)
+data <- data[!duplicated(data$NFID),]
+data <- data[complete.cases(data),] #n=1579
+
+# Define model
+
+model <- '
+
+#direct effects
+HEIGHT ~ AGE+SEX+C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20
+HEIGHT ~ c*mheiPRS_0.05
+HEIGHT ~ f*pheiPRS_0.05         
+
+#mediator
+heiPRS_0.05 ~ 0.5*mheiPRS_0.05
+heiPRS_0.05 ~ 0.5*pheiPRS_0.05 
+
+HEIGHT ~ b*heiPRS_0.05
+
+pHEI_res ~ g*pheiPRS_0.05+pAGE
+mHEI_res ~ h*mheiPRS_0.05+mAGE
+
+HEIGHT ~ i*pHEI_res
+HEIGHT ~ j*mHEI_res
+
+# indirect effects (a*b, d*b)
+ab := 0.5*b
+db := 0.5*b
+gi := g*i
+hj := h*j
+
+
+# total effects 
+total_mum := c + (0.5*b) + (h*j) ###### THIS IS WHAT I HAVE ADDED - NOT SURE IF ITS RIGHT THO #####
+total_dad := f + (0.5*b) + (g*i) ###### THIS IS WHAT I HAVE ADDED - NOT SURE IF ITS RIGHT THO #####
+
+# covariance
+mheiPRS_0.05 ~~ pheiPRS_0.05
+mHEI_res ~~ pHEI_res
+
+'
+
+# Fit the model
+fitM <- sem(model, data=data, se="bootstrap", estimator='ML')
+sem_model <- summary(fitM, standardized=TRUE, fit.measures=TRUE, ci=TRUE)
+sem_model_df <- as.data.frame(sem_model$PE)
+sem_model_final <- sem_model_df[sem_model_df$label != "", c(1:4,6:7,9:11)] #here we are extracting values of interest e.g. est, se, p, ci
+extended_model <- cbind(sem_model_final, AIC(fitM))
+
+write.csv(extended_model, "heiPRS_0.05_pa_m2_bs_nosib.csv", row.names=F, quote=F)
+
+#############################
+#EXTENDED (RESTRICTED) MODEL#
+#############################
+
+rm(list=ls())
+data <- read.table("IGE_height_pathway_analysis_df", header=T)
+data <- data[!duplicated(data$NFID),]
+data <- data[complete.cases(data),] #n=1579
+
+# Define model
+
+model <- ' 
+
+#direct effects
+HEIGHT ~ AGE+SEX+C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20
+
+#mediator
+heiPRS_0.05 ~ 0.5*mheiPRS_0.05
+heiPRS_0.05 ~ 0.5*pheiPRS_0.05
+
+HEIGHT ~ b*heiPRS_0.05
+
+pHEI_res ~ g*pheiPRS_0.05+pAGE
+mHEI_res ~ h*mheiPRS_0.05+mAGE
+
+HEIGHT ~ i*pHEI_res
+HEIGHT ~ j*mHEI_res
+
+# indirect effects (a*b, d*b)
+ab := 0.5*b
+db := 0.5*b
+gi := g*i
+hj := h*j
+
+
+# total effects 
+total_mum := (0.5*b) + (h*j) ###### THIS IS WHAT I HAVE ADDED - NOT SURE IF ITS RIGHT THO #####
+total_dad := (0.5*b) + (g*i) ###### THIS IS WHAT I HAVE ADDED - NOT SURE IF ITS RIGHT THO #####
+
+# covariance
+mheiPRS_0.05 ~~ pheiPRS_0.05
+mHEI_res ~~ pHEI_res
+'
+
+# Fit the model
+fitM <- sem(model, data=data, se="bootstrap", estimator='ML')
+sem_model <- summary(fitM, standardized=TRUE, fit.measures=TRUE, ci=TRUE)
+sem_model_df <- as.data.frame(sem_model$PE)
+sem_model_final <- sem_model_df[sem_model_df$label != "", c(1:4,6:7,9:11)] #here we are extracting values of interest e.g. est, se, p, ci
+extended_restricted_model <- cbind(sem_model_final, AIC(fitM))
+
+write.csv(extended_restricted_model, "heiPRS_0.05_pa_m3_bs_nosib.csv", row.names=F, quote=F)
+```
+
+## Maternal Duo Sample  
+
+```{r, eval=FALSE}
+
+rm(list=ls())
+library(lavaan)
+
+data <- read.table("IGE_height_pathway_matduo_df", header=T)
+data <- data[complete.cases(data),] #n=5896
+
+##############
+#SIMPLE MODEL#
+##############
+
+# Define model
+
+model <- ' 
+
+# direct effects
+HEIGHT ~ AGE+SEX+C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20
+HEIGHT ~ c*mheiPRS_0.05
+
+# mediator
+heiPRS_0.05 ~ 0.5*mheiPRS_0.05
+HEIGHT ~ b*heiPRS_0.05
+
+# indirect effects (a*b)
+ab := 0.5*b
+
+# total effects 
+total_mum := c + (0.5*b)
+'
+
+# Fit the model
+fitM <- sem(model, data=data, se="bootstrap", estimator='ML')
+
+sem_model <- summary(fitM, standardized=TRUE, fit.measures=TRUE, ci=TRUE)
+sem_model_df <- as.data.frame(sem_model$PE)
+sem_model_final <- sem_model_df[sem_model_df$label != "", c(1:4,6:7,9:11)] #here we are extracting values of interest e.g. est, se, p, ci
+simple_model <- cbind(sem_model_final, AIC(fitM))
+
+write.csv(simple_model, "heiPRS_0.05_pa_m1_bs_matduo.csv", row.names=F, quote=F)
+
+################
+#EXTENDED MODEL#
+################
+
+rm(list=ls())
+data <- read.table("IGE_height_pathway_matduo_df", header=T)
+data <- data[complete.cases(data),] #n=5896
+
+# Define model
+
+model <- '
+
+#direct effects
+HEIGHT ~ AGE+SEX+C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20
+HEIGHT ~ c*mheiPRS_0.05
+
+#mediator
+heiPRS_0.05 ~ 0.5*mheiPRS_0.05
+
+HEIGHT ~ b*heiPRS_0.05
+
+mHEI_res ~ h*mheiPRS_0.05+mAGE
+
+HEIGHT ~ j*mHEI_res
+
+# indirect effects (a*b, d*b)
+ab := 0.5*b
+hj := h*j
+
+
+# total effects 
+total_mum := c + (0.5*b) + (h*j) ###### THIS IS WHAT I HAVE ADDED - NOT SURE IF ITS RIGHT THO #####
+
+'
+
+# Fit the model
+fitM <- sem(model, data=data, estimator='ML')
+sem_model <- summary(fitM, standardized=TRUE, fit.measures=TRUE, ci=TRUE)
+sem_model_df <- as.data.frame(sem_model$PE)
+sem_model_final <- sem_model_df[sem_model_df$label != "", c(1:4,6:7,9:11)] #here we are extracting values of interest e.g. est, se, p, ci
+extended_model <- cbind(sem_model_final, AIC(fitM))
+
+write.csv(extended_model, "heiPRS_0.05_pa_m2_bs_matduo.csv", row.names=F, quote=F)
+
+#############################
+#EXTENDED (RESTRICTED) MODEL#
+#############################
+
+rm(list=ls())
+data <- read.table("IGE_height_pathway_matduo_df", header=T)
+data <- data[complete.cases(data),] #n=5896
+
+# Define model
+
+model <- ' 
+
+#direct effects
+HEIGHT ~ AGE+SEX+C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20
+
+#mediator
+heiPRS_0.05 ~ 0.5*mheiPRS_0.05
+HEIGHT ~ b*heiPRS_0.05
+mHEI_res ~ h*mheiPRS_0.05+mAGE
+HEIGHT ~ j*mHEI_res
+
+# indirect effects (a*b, d*b)
+ab := 0.5*b
+hj := h*j
+
+
+# total effects 
+total_mum := (0.5*b) + (h*j) ###### THIS IS WHAT I HAVE ADDED - NOT SURE IF ITS RIGHT THO #####
+'
+
+# Fit the model
+fitM <- sem(model, data=data, se="bootstrap", estimator='ML')
+sem_model <- summary(fitM, standardized=TRUE, fit.measures=TRUE, ci=TRUE)
+sem_model_df <- as.data.frame(sem_model$PE)
+sem_model_final <- sem_model_df[sem_model_df$label != "", c(1:4,6:7,9:11)] #here we are extracting values of interest e.g. est, se, p, ci
+extended_restricted_model <- cbind(sem_model_final, AIC(fitM))
+
+write.csv(extended_restricted_model, "heiPRS_0.05_pa_m3_bs_matduo.csv", row.names=F, quote=F)
+```
+
+## Paternal Duo Sample  
+
+```{r, eval=FALSE}
+
+rm(list=ls())
+library(lavaan)
+
+data <- read.table("IGE_height_pathway_patduo_df", header=T)
+data <- data[complete.cases(data),] #n=2732
+
+##############
+#SIMPLE MODEL#
+##############
+
+# Define model
+
+model <- ' 
+
+# direct effects
+HEIGHT ~ AGE+SEX+C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20
+
+HEIGHT ~ f*pheiPRS_0.05             
+
+# mediator
+heiPRS_0.05 ~ 0.5*pheiPRS_0.05
+HEIGHT ~ b*heiPRS_0.05
+
+# indirect effects (a*b, d*b)
+db := 0.5*b
+
+# total effects 
+total_dad := f + (0.5*b)
+
+'
+
+# Fit the model
+fitM <- sem(model, data=data, se="bootstrap", estimator='ML')
+
+sem_model <- summary(fitM, standardized=TRUE, fit.measures=TRUE, ci=TRUE)
+sem_model_df <- as.data.frame(sem_model$PE)
+sem_model_final <- sem_model_df[sem_model_df$label != "", c(1:4,6:7,9:11)] #here we are extracting values of interest e.g. est, se, p, ci
+simple_model <- cbind(sem_model_final, AIC(fitM))
+
+write.csv(simple_model, "heiPRS_0.05_pa_m1_bs_patduo.csv", row.names=F, quote=F)
+
+################
+#EXTENDED MODEL#
+################
+
+rm(list=ls())
+data <- read.table("IGE_height_pathway_patduo_df", header=T)
+data <- data[complete.cases(data),] #n=2732
+
+# Define model
+
+model <- '
+
+#direct effects
+HEIGHT ~ AGE+SEX+C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20
+HEIGHT ~ f*pheiPRS_0.05         
+
+#mediator
+heiPRS_0.05 ~ 0.5*pheiPRS_0.05 
+
+HEIGHT ~ b*heiPRS_0.05
+
+pHEI_res ~ g*pheiPRS_0.05+pAGE
+
+HEIGHT ~ i*pHEI_res
+
+# indirect effects (a*b, d*b)
+db := 0.5*b
+gi := g*i
+
+
+
+# total effects 
+total_dad := f + (0.5*b) + (g*i) ###### THIS IS WHAT I HAVE ADDED - NOT SURE IF ITS RIGHT THO #####
+
+'
+
+# Fit the model
+fitM <- sem(model, data=data, estimator='ML')
+sem_model <- summary(fitM, standardized=TRUE, fit.measures=TRUE, ci=TRUE)
+sem_model_df <- as.data.frame(sem_model$PE)
+sem_model_final <- sem_model_df[sem_model_df$label != "", c(1:4,6:7,9:11)] #here we are extracting values of interest e.g. est, se, p, ci
+extended_model <- cbind(sem_model_final, AIC(fitM))
+
+write.csv(extended_model, "heiPRS_0.05_pa_m2_bs_patduo.csv", row.names=F, quote=F)
+
+#############################
+#EXTENDED (RESTRICTED) MODEL#
+#############################
+
+rm(list=ls())
+data <- read.table("IGE_height_pathway_patduo_df", header=T)
+data <- data[complete.cases(data),] #n=2732
+
+# Define model
+
+model <- ' 
+
+#direct effects
+HEIGHT ~ AGE+SEX+C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20
+
+#mediator
+heiPRS_0.05 ~ 0.5*pheiPRS_0.05
+HEIGHT ~ b*heiPRS_0.05
+pHEI_res ~ g*pheiPRS_0.05+pAGE
+HEIGHT ~ i*pHEI_res
+
+
+# indirect effects (a*b, d*b)
+db := 0.5*b
+gi := g*i
+
+
+
+# total effects 
+total_dad := (0.5*b) + (g*i) ###### THIS IS WHAT I HAVE ADDED - NOT SURE IF ITS RIGHT THO #####
+
+'
+
+# Fit the model
+fitM <- sem(model, data=data, se="bootstrap", estimator='ML')
+sem_model <- summary(fitM, standardized=TRUE, fit.measures=TRUE, ci=TRUE)
+sem_model_df <- as.data.frame(sem_model$PE)
+sem_model_final <- sem_model_df[sem_model_df$label != "", c(1:4,6:7,9:11)] #here we are extracting values of interest e.g. est, se, p, ci
+extended_restricted_model <- cbind(sem_model_final, AIC(fitM))
+
+write.csv(extended_restricted_model, "heiPRS_0.05_pa_m3_bs_patduo.csv", row.names=F, quote=F)
+```
+
