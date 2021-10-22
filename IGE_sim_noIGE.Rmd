@@ -643,7 +643,7 @@ plot1 <- ggplot(data=df2, aes(x=prs_noise, y=Estimate, fill=Tagged)) +
          geom_boxplot(outlier.size=0, fatten=1) + 
          scale_y_continuous(limits=c(-0.5,0.05), breaks=seq(-0.5,0.05, 0.1), expand = c(0, 0)) +
          xlab("Poylgenic Score (PGS) Noise") + 
-         ylab("Maternal PGS Beta Estimate") +
+         ylab("Offspring Pheno ~ Maternal PGS Beta Estimate") +
          facet_wrap(~h2) +
          theme(axis.text = element_text(size=10), strip.text = element_text(size=10), axis.title=element_text(size=10,face="bold"), axis.text.x=element_text(angle=45)) +
          ggtitle("Extended Model Maternal Indirect Genetic Effect (Path C)") +
