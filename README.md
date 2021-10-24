@@ -131,7 +131,14 @@ More information and scripts on how the regression and pathway models are implem
 
 # Simulation Analyses
 
-The aim here is to simulate the genetic and phenotypic associations between members of a trio i.e. biological parents and a single offspring. To keep analyses simple and efficient we simulate the trio effects in variances rather than simulating individual genotypes. Transmitted and non-transmitted genetic variances are not separated in these simulations. Genetic nurturing effects are not included in these simulations. 
+The aim here is to simulate the genetic and phenotypic associations between members of a trio i.e. biological parents and a single offspring. 
+As an overview, here we are simulating data for;
+10,000 trio members
+traits with varying heritability (0.3, 0.6, 0.9)
+varying levels of tagged genetic variance (0.2, 0.6, 1)
+varying levels of noise associated with PGSs (0-1)
+
+To keep analyses simple and efficient we simulate the trio effects in variances rather than simulating individual genotypes. Transmitted and non-transmitted genetic variances are not separated in these simulations. Genetic nurturing effects are not included in these simulations. 
 
 A phenotypic variance of 1 is specified. The additive genetic variance is specified as the heritability multiplied by the phenotypic variance; so in our simulations the additive genetic variance is always equal to the heritability. The genetic variance is made up of tagged and non-tagged genetic variance, the tagged genetic variance aims to represent SNP heritability. Remaining variance is attributed to the environment.
 
