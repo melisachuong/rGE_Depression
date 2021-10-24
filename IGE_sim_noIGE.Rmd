@@ -645,10 +645,10 @@ plot1 <- ggplot(data=df2, aes(x=prs_noise, y=Estimate, fill=Tagged)) +
          xlab("Poylgenic Score (PGS) Noise") + 
          ylab("Offspring Pheno ~ Maternal PGS Beta Estimate") +
          facet_wrap(~h2) +
-         theme(axis.text = element_text(size=10), strip.text = element_text(size=10), axis.title=element_text(size=10,face="bold"), axis.text.x=element_text(angle=45)) +
          ggtitle("Extended Model Maternal Indirect Genetic Effect (Path C)") +
          scale_fill_brewer("Tagged Genetic Variance", palette="Accent") + 
-         theme_bw()
+         theme_bw() + 
+         theme(axis.title = element_text(size=15), axis.text = element_text(size=15), strip.text = element_text(size=15), legend.title = element_text(size=15), legend.text = element_text(size=15), axis.text.x=element_text(angle=45))
 
 ggsave(file="sim_mIGE_pathc.png", plot=plot1, width=15, height=6)
 ggsave(file="sim_mIGE_pathc.svg", plot=plot1, width=15, height=6)
@@ -663,10 +663,10 @@ plot2 <- ggplot(data=df3, aes(x=prs_noise, y=Estimate, fill=Tagged)) +
          xlab("Poylgenic Score (PGS) Noise") + 
          ylab("Offspring Pheno ~ Paternal PGS Beta Estimate") +
          facet_wrap(~h2) +
-         theme(axis.text = element_text(size=10), strip.text = element_text(size=10), axis.title=element_text(size=10,face="bold"), axis.text.x=element_text(angle=45)) +
          ggtitle("Extended Model Paternal Indirect Genetic Effect (Path F)") +
          scale_fill_brewer("Tagged Genetic Variance", palette="Accent") + 
-         theme_bw()
+         theme_bw() + 
+         theme(axis.title = element_text(size=15), axis.text = element_text(size=15), strip.text = element_text(size=15), legend.title = element_text(size=15), legend.text = element_text(size=15), axis.text.x=element_text(angle=45))
 
 ggsave(file="sim_pIGE_pathf.png", plot=plot2, width=15, height=6)
 ggsave(file="sim_pIGE_pathf.svg", plot=plot2, width=15, height=6)
@@ -681,10 +681,10 @@ plot3 <- ggplot(data=df4, aes(x=prs_noise, y=Estimate, fill=Tagged)) +
          xlab("Poylgenic Score (PGS) Noise") + 
          ylab("Offspring Pheno ~ Maternal Pheno Beta Estimate") +
          facet_wrap(~h2) +
-         theme(axis.text = element_text(size=10), strip.text = element_text(size=10), axis.title=element_text(size=10,face="bold"), axis.text.x=element_text(angle=45)) +
          ggtitle("Extended Model Offspring Pheno ~ Maternal Pheno Effect Beta Estimate (Path J)") +
          scale_fill_brewer("Tagged Genetic Variance", palette="Accent") + 
-         theme_bw()
+         theme_bw() + 
+         theme(axis.title = element_text(size=15), axis.text = element_text(size=15), strip.text = element_text(size=15), legend.title = element_text(size=15), legend.text = element_text(size=15), axis.text.x=element_text(angle=45))
 
 ggsave(file="sim_mIGE_pathj.png", plot=plot3, width=15, height=6)
 ggsave(file="sim_mIGE_pathj.svg", plot=plot3, width=15, height=6)
@@ -699,10 +699,10 @@ plot4 <- ggplot(data=df5, aes(x=prs_noise, y=Estimate, fill=Tagged)) +
          xlab("Poylgenic Score (PGS) Noise") + 
          ylab("Offspring Pheno ~ Paternal Pheno Beta Estimate") +
          facet_wrap(~h2) +
-         theme(axis.text = element_text(size=10), strip.text = element_text(size=10), axis.title=element_text(size=10,face="bold")) +
          ggtitle("Extended Model Offspring Pheno ~ Paternal Pheno Effect Beta Estimate (Path I)") +
          scale_fill_brewer("Tagged Genetic Variance", palette="Accent") + 
-         theme_bw()
+         theme_bw() + 
+         theme(axis.title = element_text(size=15), axis.text = element_text(size=15), strip.text = element_text(size=15), legend.title = element_text(size=15), legend.text = element_text(size=15), axis.text.x=element_text(angle=45))
 
 ggsave(file="sim_pIGE_pathi.png", plot=plot4, width=15, height=6)
 ggsave(file="sim_pIGE_pathi.svg", plot=plot4, width=15, height=6)
