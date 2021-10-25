@@ -2,13 +2,11 @@
 ## Keywords: Gene-Environment Correlations, Genetic Nurturing, Indirect Genetic Effects
 
 # Project Description
-Here we are exploring gene-environment correlations (rGE), also known as indirect genetic effects, within Generation Scotland Trios (offspring with both biological parents) using Polygenic Scores (PGS). 
+Here we are exploring gene-environment correlations (rGE) within Generation Scotland Trios (offspring with both biological parents) using Polygenic Scores (PGS). 
 rGE refers to *exposure* to certain environments that are driven by genetics. rGE in the context of biological trios can also be labelled as passive rGE or genetic nurturing. (Yes, I know - so MANY labels!)
 
 This figure from Kong and colleagues (2018) provides a neat visualisation of genetic nurturing effects. The figure shows that parental genetics are made up of genes that they *transmit* and that they do *not transmit*. The transmitted genes can have both a *direct* and/or *genetic nurturing* effect on the offspring, whereas the non-transmitted genes can only exhibit genetic nurturing effects, if they have an effect at all:
-![F1 large](F1.large.jpg)
-
-![Trio Genetic Nurturing](https://github.com/melisachuong/rGE_Depression/F1.large.jpg?raw=true )
+![Trio Genetic Nurturing](F1.large.jpg)
 
 It is important to understand whether traits such as depression have genetic nurturing effects at play. The translational aspect of this research would be identifying the mediating factors through which these genetic nurturing effects have an impact (e.g. the parental traits *Yp/Ym* shown in the figure above). Identifying the mechanism can provide clear targets for interventions aimed at individuals with heightened risk. 
 
@@ -24,7 +22,8 @@ In contrast **EA** is a trait that has higher heritability and a relatively well
 
 We also explore **height** as this is a highly heritable trait ~80% with GWAS that is well powered. The resulting PGSs account for much more variance than seen in EA and depression. Furthermore, evidence suggests that there may be genetic nurturing effects at play for height (Laurence et al., 2021), although we hypothesised these effects to be negligible. 
 
-More information and scripts on quality control and cleaning of phenotypes can be found in *Real Data* folder. 
+More information and scripts on quality control and cleaning of phenotypes can be found in RealDataAnalyses.R R scripts.  
+![Phenotype Demographics](IGE_Results/Slide2.PNG)
 
 # Polygenic Scores
 
@@ -87,6 +86,7 @@ Rscript PRSice.R\
 --out <INSERT OUTPUT NAME>
 
 ```
+![Polygenic Score Demographics](IGE_Results/Slide3.PNG)  
 # Statistical Analyses & Software Packages
 
 **Packages**
@@ -110,24 +110,32 @@ We aim to model the structure presented in Kong and colleagues (2018) figure (pr
 
 Mixed effects regression models are a very simple way of exploring whether trio PGSs can pick up the present genetic nurturing effects. As our trio offsprings include siblings, we fix sibling effects as random. 2 models are implemented
 
-*Model A: off Pheno ~ oPGS + covariates*
+*Model a: off Pheno ~ oPGS + covariates*
 
-*Model B: Off Pheno ~ oPGS + mPGS + pPGS + covariates*
+*Model b: Off Pheno ~ oPGS + mPGS + pPGS + covariates*
 
-Model A represents direct genetic effects (i.e. the genetic effects of parents that are transmitted to the offspring)
+Model *a* represents direct genetic effects (i.e. the genetic effects of parents that are transmitted to the offspring)
 
-Model B represents direct and indirect genetic effects (the inclusion of the parental PGSs alongside the offspring PGSs suggest any additional variance captured by model B can be attributed to variance captured by the parental PGSs above the variance captured by the offspring PGSs only)
+Model *b* represents direct and indirect genetic effects (the inclusion of the parental PGSs alongside the offspring PGSs suggest any additional variance captured by model *b* can be attributed to variance captured by the parental PGSs above the variance captured by the offspring PGSs only).  
+
+Results show that model *b* is has a significantly better fit to the data for Educational Attainment only. This suggests that there is no evidence of genetic nurturing that can be picked up using PGSs in the other traits of interest.
+![Regression Model Comparisons](IGE_Results/Slide4.PNG)
 
 **Pathway Models**
 
 2 separate pathway models are implemented, simple and extended. 
 
-The simple pathway model is essentially the equivalent of regression model B, capturing  both direct and indirect genetic effects using PGSs. 
+The simple pathway model is essentially the equivalent of regression model *b*, capturing  both direct and indirect genetic effects using PGSs.  
+As the variables (trio PGSs) are correlated, the beta coefficients should be interpreted with caution within the regression models. The pathway models explore associations independently, and thus, the coefficients can be thought to provide useful information on size and direction of associations.  
 
 The extended pathway model aims to explore parental phenotype mediated genetic nurturing pathways. 
 ![Simple and Extended Pathway Models ](./IGE_Figures/Slide6.PNG)
 
-More information and scripts on how the regression and pathway models are implemented for each phenotype can be found in the *Real Data* folder. 
+Simple and Extended pathway models show interesting and in some cases contradicting results. We observe significant genetic nurturing effects mediated by parental phenotypes for all traits from the extended pathway models, however, for all traits except educational attainment, we either see NO (or very weak evidence) or genetic nurturing effects from the simple pathway model results. Interestingly, we observe highly significant and *negative* genetic nurturing effects for height within the extended models. These results are difficult to interpret and point to potential confounding and biases introduced to the models with the inclusion of parental phenotype mediated genetic nurturing pathways. We hypothesise that these confounds are introduced as PGSs are poor measures of genetic variance, and moreover, parental phenotypes are likely acting as better measures of genetic variance. 
+
+More discussion on results can be found in the manuscript. All results are available in the supplementary material file. 
+
+![Pathway Model Results](IGE_Results/Slide5.PNG)
 
 # Simulation Analyses
 
@@ -152,7 +160,7 @@ A phenotypic variance of 1 is specified. The additive genetic variance is specif
   
 ``` 
 
-As mentioned above, genetic variables consist of tagged and non-tagged counterparts. 
+As mentioned above, genetic variables consist of tagged and non-tagged counterparts. As we use data from genotyping arrays, which aims to capture a wide range of genetic variants (but not all), it is possible that the important variants involved in a trait are not measured at all. This will directly have an impact on PGS power.  
 
 ```{r}
 
