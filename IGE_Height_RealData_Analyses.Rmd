@@ -1124,20 +1124,20 @@ model <- '
 # direct effects
 HEIGHT ~ AGE+SEX+C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20
 HEIGHT ~ c*mheiPRS_0.05
-HEIGHT ~ f*pheiPRS_0.05             
+HEIGHT ~ b*pheiPRS_0.05             
 
 # mediator
 heiPRS_0.05 ~ 0.5*mheiPRS_0.05
 heiPRS_0.05 ~ 0.5*pheiPRS_0.05
-HEIGHT ~ b*heiPRS_0.05
+HEIGHT ~ a*heiPRS_0.05
 
-# indirect effects (a*b, d*b)
-ab := 0.5*b
-db := 0.5*b
+# indirect effects (i*a, h*a)
+ia := 0.5*a
+ha := 0.5*a
 
 # total effects 
-total_mum := c + (0.5*b)
-total_dad := f + (0.5*b)
+total_mum := c + (0.5*a)
+total_dad := b + (0.5*a)
 
 # covariance
 mheiPRS_0.05 ~~ pheiPRS_0.05
@@ -1168,30 +1168,30 @@ model <- '
 #direct effects
 HEIGHT ~ AGE+SEX+C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20
 HEIGHT ~ c*mheiPRS_0.05
-HEIGHT ~ f*pheiPRS_0.05         
+HEIGHT ~ b*pheiPRS_0.05         
 
 #mediator
 heiPRS_0.05 ~ 0.5*mheiPRS_0.05
 heiPRS_0.05 ~ 0.5*pheiPRS_0.05 
 
-HEIGHT ~ b*heiPRS_0.05
+HEIGHT ~ a*heiPRS_0.05
 
-pHEI_res ~ g*pheiPRS_0.05+pAGE
-mHEI_res ~ h*mheiPRS_0.05+mAGE
+pHEI_res ~ d*pheiPRS_0.05+pAGE
+mHEI_res ~ e*mheiPRS_0.05+mAGE
 
-HEIGHT ~ i*pHEI_res
-HEIGHT ~ j*mHEI_res
+HEIGHT ~ f*pHEI_res
+HEIGHT ~ g*mHEI_res
 
-# indirect effects (a*b, d*b)
-ab := 0.5*b
-db := 0.5*b
-gi := g*i
-hj := h*j
+# indirect effects (i*a, h*a)
+ia := 0.5*a
+ha := 0.5*a
+df := d*f
+eg := e*g
 
 
 # total effects 
-total_mum := c + (0.5*b) + (h*j) ###### THIS IS WHAT I HAVE ADDED - NOT SURE IF ITS RIGHT THO #####
-total_dad := f + (0.5*b) + (g*i) ###### THIS IS WHAT I HAVE ADDED - NOT SURE IF ITS RIGHT THO #####
+total_mum := c + (0.5*a) + (e*g)
+total_dad := b + (0.5*a) + (d*f) 
 
 # covariance
 mheiPRS_0.05 ~~ pheiPRS_0.05
@@ -1208,57 +1208,6 @@ extended_model <- cbind(sem_model_final, AIC(fitM))
 
 write.csv(extended_model, "heiPRS_0.05_pa_m2_bs.csv", row.names=F, quote=F)
 
-#############################
-#EXTENDED (RESTRICTED) MODEL#
-#############################
-
-rm(list=ls())
-data <- read.table("IGE_height_pathway_analysis_df", header=T)
-data <- data[complete.cases(data),]
-
-# Define model
-
-model <- ' 
-
-#direct effects
-HEIGHT ~ AGE+SEX+C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20
-
-#mediator
-heiPRS_0.05 ~ 0.5*mheiPRS_0.05
-heiPRS_0.05 ~ 0.5*pheiPRS_0.05
-
-HEIGHT ~ b*heiPRS_0.05
-
-pHEI_res ~ g*pheiPRS_0.05+pAGE
-mHEI_res ~ h*mheiPRS_0.05+mAGE
-
-HEIGHT ~ i*pHEI_res
-HEIGHT ~ j*mHEI_res
-
-# indirect effects (a*b, d*b)
-ab := 0.5*b
-db := 0.5*b
-gi := g*i
-hj := h*j
-
-
-# total effects 
-total_mum := (0.5*b) + (h*j) ###### THIS IS WHAT I HAVE ADDED - NOT SURE IF ITS RIGHT THO #####
-total_dad := (0.5*b) + (g*i) ###### THIS IS WHAT I HAVE ADDED - NOT SURE IF ITS RIGHT THO #####
-
-# covariance
-mheiPRS_0.05 ~~ pheiPRS_0.05
-mHEI_res ~~ pHEI_res
-'
-
-# Fit the model
-fitM <- sem(model, data=data, se="bootstrap", estimator='ML')
-sem_model <- summary(fitM, standardized=TRUE, fit.measures=TRUE, ci=TRUE)
-sem_model_df <- as.data.frame(sem_model$PE)
-sem_model_final <- sem_model_df[sem_model_df$label != "", c(1:4,6:7,9:11)] #here we are extracting values of interest e.g. est, se, p, ci
-extended_restricted_model <- cbind(sem_model_final, AIC(fitM))
-
-write.csv(extended_restricted_model, "heiPRS_0.05_pa_m3_bs.csv", row.names=F, quote=F)
 ```
 
 ![.](./HeightResults/Slide8.PNG)
@@ -1288,20 +1237,20 @@ model <- '
 # direct effects
 HEIGHT ~ AGE+SEX+C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20
 HEIGHT ~ c*mheiPRS_0.05
-HEIGHT ~ f*pheiPRS_0.05             
+HEIGHT ~ b*pheiPRS_0.05             
 
 # mediator
-heiPRS_0.05 ~ a*mheiPRS_0.05
-heiPRS_0.05 ~ d*pheiPRS_0.05
-HEIGHT ~ b*heiPRS_0.05
+heiPRS_0.05 ~ 0.5*mheiPRS_0.05
+heiPRS_0.05 ~ 0.5*pheiPRS_0.05
+HEIGHT ~ a*heiPRS_0.05
 
-# indirect effects (a*b, d*b)
-ab := a*b
-db := d*b
+# indirect effects (i*a, h*a)
+ia := i*a
+ha := h*a
 
 # total effects 
-total_mum := c + (a*b)
-total_dad := f + (d*b)
+total_mum := c + (i*a)
+total_dad := b + (h*a)
 
 # covariance
 mheiPRS_0.05 ~~ pheiPRS_0.05
@@ -1332,30 +1281,30 @@ model <- '
 #direct effects
 HEIGHT ~ AGE+SEX+C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20
 HEIGHT ~ c*mheiPRS_0.05
-HEIGHT ~ f*pheiPRS_0.05         
+HEIGHT ~ b*pheiPRS_0.05         
 
 #mediator
-heiPRS_0.05 ~ a*mheiPRS_0.05
-heiPRS_0.05 ~ d*pheiPRS_0.05 
+heiPRS_0.05 ~ i*mheiPRS_0.05
+heiPRS_0.05 ~ h*pheiPRS_0.05 
 
-HEIGHT ~ b*heiPRS_0.05
+HEIGHT ~ a*heiPRS_0.05
 
-pHEI_res ~ g*pheiPRS_0.05+pAGE
-mHEI_res ~ h*mheiPRS_0.05+mAGE
+pHEI_res ~ d*pheiPRS_0.05+pAGE
+mHEI_res ~ e*mheiPRS_0.05+mAGE
 
-HEIGHT ~ i*pHEI_res
-HEIGHT ~ j*mHEI_res
+HEIGHT ~ f*pHEI_res
+HEIGHT ~ g*mHEI_res
 
-# indirect effects (a*b, d*b)
-ab := a*b
-db := d*b
-gi := g*i
-hj := h*j
+# indirect effects (i*a, h*a)
+ia := i*a
+ha := h*a
+df := d*f
+eg := e*g
 
 
 # total effects 
-total_mum := c + (a*b) + (h*j) ###### THIS IS WHAT I HAVE ADDED - NOT SURE IF ITS RIGHT THO #####
-total_dad := f + (d*b) + (g*i) ###### THIS IS WHAT I HAVE ADDED - NOT SURE IF ITS RIGHT THO #####
+total_mum := c + (i*a) + (e*g)
+total_dad := b + (h*a) + (d*f) 
 
 # covariance
 mheiPRS_0.05 ~~ pheiPRS_0.05
@@ -1372,57 +1321,6 @@ extended_model <- cbind(sem_model_final, AIC(fitM))
 
 write.csv(extended_model, "heiPRS_0.05_pa_m2_bs_fm.csv", row.names=F, quote=F)
 
-#############################
-#EXTENDED (RESTRICTED) MODEL#
-#############################
-
-rm(list=ls())
-data <- read.table("IGE_height_pathway_analysis_df", header=T)
-data <- data[complete.cases(data),]
-
-# Define model
-
-model <- ' 
-
-#direct effects
-HEIGHT ~ AGE+SEX+C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20
-
-#mediator
-heiPRS_0.05 ~ a*mheiPRS_0.05
-heiPRS_0.05 ~ d*pheiPRS_0.05
-
-HEIGHT ~ b*heiPRS_0.05
-
-pHEI_res ~ g*pheiPRS_0.05+pAGE
-mHEI_res ~ h*mheiPRS_0.05+mAGE
-
-HEIGHT ~ i*pHEI_res
-HEIGHT ~ j*mHEI_res
-
-# indirect effects (a*b, d*b)
-ab := a*b
-db := d*b
-gi := g*i
-hj := h*j
-
-
-# total effects 
-total_mum := (a*b) + (h*j) ###### THIS IS WHAT I HAVE ADDED - NOT SURE IF ITS RIGHT THO #####
-total_dad := (d*b) + (g*i) ###### THIS IS WHAT I HAVE ADDED - NOT SURE IF ITS RIGHT THO #####
-
-# covariance
-mheiPRS_0.05 ~~ pheiPRS_0.05
-mHEI_res ~~ pHEI_res
-'
-
-# Fit the model
-fitM <- sem(model, data=data, se="bootstrap", estimator='ML')
-sem_model <- summary(fitM, standardized=TRUE, fit.measures=TRUE, ci=TRUE)
-sem_model_df <- as.data.frame(sem_model$PE)
-sem_model_final <- sem_model_df[sem_model_df$label != "", c(1:4,6:7,9:11)] #here we are extracting values of interest e.g. est, se, p, ci
-extended_restricted_model <- cbind(sem_model_final, AIC(fitM))
-
-write.csv(extended_restricted_model, "heiPRS_0.05_pa_m3_bs_fm.csv", row.names=F, quote=F)
 ```
  
 ## Female Only Sample  
@@ -1447,20 +1345,20 @@ model <- '
 # direct effects
 HEIGHT ~ AGE+C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20
 HEIGHT ~ c*mheiPRS_0.05
-HEIGHT ~ f*pheiPRS_0.05             
+HEIGHT ~ b*pheiPRS_0.05             
 
 # mediator
 heiPRS_0.05 ~ 0.5*mheiPRS_0.05
 heiPRS_0.05 ~ 0.5*pheiPRS_0.05
-HEIGHT ~ b*heiPRS_0.05
+HEIGHT ~ a*heiPRS_0.05
 
-# indirect effects (a*b, d*b)
-ab := 0.5*b
-db := 0.5*b
+# indirect effects (i*a, h*a)
+ia := 0.5*a
+ha := 0.5*a
 
 # total effects 
-total_mum := c + (0.5*b)
-total_dad := f + (0.5*b)
+total_mum := c + (0.5*a)
+total_dad := b + (0.5*a)
 
 # covariance
 mheiPRS_0.05 ~~ pheiPRS_0.05
@@ -1485,37 +1383,35 @@ data <- read.table("IGE_height_pathway_analysis_df", header=T)
 data <- subset(data, data$SEX=="F")
 data <- data[complete.cases(data),] #n=1498
 
-# Define model
-
 model <- '
 
 #direct effects
 HEIGHT ~ AGE+C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20
 HEIGHT ~ c*mheiPRS_0.05
-HEIGHT ~ f*pheiPRS_0.05         
+HEIGHT ~ b*pheiPRS_0.05         
 
 #mediator
 heiPRS_0.05 ~ 0.5*mheiPRS_0.05
 heiPRS_0.05 ~ 0.5*pheiPRS_0.05 
 
-HEIGHT ~ b*heiPRS_0.05
+HEIGHT ~ a*heiPRS_0.05
 
-pHEI_res ~ g*pheiPRS_0.05+pAGE
-mHEI_res ~ h*mheiPRS_0.05+mAGE
+pHEI_res ~ d*pheiPRS_0.05+pAGE
+mHEI_res ~ e*mheiPRS_0.05+mAGE
 
-HEIGHT ~ i*pHEI_res
-HEIGHT ~ j*mHEI_res
+HEIGHT ~ f*pHEI_res
+HEIGHT ~ g*mHEI_res
 
-# indirect effects (a*b, d*b)
-ab := 0.5*b
-db := 0.5*b
-gi := g*i
-hj := h*j
+# indirect effects (i*a, h*a)
+ia := 0.5*a
+ha := 0.5*a
+df := d*f
+eg := e*g
 
 
 # total effects 
-total_mum := c + (0.5*b) + (h*j) ###### THIS IS WHAT I HAVE ADDED - NOT SURE IF ITS RIGHT THO #####
-total_dad := f + (0.5*b) + (g*i) ###### THIS IS WHAT I HAVE ADDED - NOT SURE IF ITS RIGHT THO #####
+total_mum := c + (0.5*a) + (e*g)
+total_dad := b + (0.5*a) + (d*f) 
 
 # covariance
 mheiPRS_0.05 ~~ pheiPRS_0.05
@@ -1609,20 +1505,20 @@ model <- '
 # direct effects
 HEIGHT ~ AGE+C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20
 HEIGHT ~ c*mheiPRS_0.05
-HEIGHT ~ f*pheiPRS_0.05             
+HEIGHT ~ b*pheiPRS_0.05             
 
 # mediator
 heiPRS_0.05 ~ 0.5*mheiPRS_0.05
 heiPRS_0.05 ~ 0.5*pheiPRS_0.05
-HEIGHT ~ b*heiPRS_0.05
+HEIGHT ~ a*heiPRS_0.05
 
-# indirect effects (a*b, d*b)
-ab := 0.5*b
-db := 0.5*b
+# indirect effects (i*a, h*a)
+ia := 0.5*a
+ha := 0.5*a
 
 # total effects 
-total_mum := c + (0.5*b)
-total_dad := f + (0.5*b)
+total_mum := c + (0.5*a)
+total_dad := b + (0.5*a)
 
 # covariance
 mheiPRS_0.05 ~~ pheiPRS_0.05
@@ -1647,37 +1543,35 @@ data <- read.table("IGE_height_pathway_analysis_df", header=T)
 data <- subset(data, data$SEX=="M")
 data <- data[complete.cases(data),] ##n=1150
 
-# Define model
-
 model <- '
 
 #direct effects
 HEIGHT ~ AGE+C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20
 HEIGHT ~ c*mheiPRS_0.05
-HEIGHT ~ f*pheiPRS_0.05         
+HEIGHT ~ b*pheiPRS_0.05         
 
 #mediator
 heiPRS_0.05 ~ 0.5*mheiPRS_0.05
 heiPRS_0.05 ~ 0.5*pheiPRS_0.05 
 
-HEIGHT ~ b*heiPRS_0.05
+HEIGHT ~ a*heiPRS_0.05
 
-pHEI_res ~ g*pheiPRS_0.05+pAGE
-mHEI_res ~ h*mheiPRS_0.05+mAGE
+pHEI_res ~ d*pheiPRS_0.05+pAGE
+mHEI_res ~ e*mheiPRS_0.05+mAGE
 
-HEIGHT ~ i*pHEI_res
-HEIGHT ~ j*mHEI_res
+HEIGHT ~ f*pHEI_res
+HEIGHT ~ g*mHEI_res
 
-# indirect effects (a*b, d*b)
-ab := 0.5*b
-db := 0.5*b
-gi := g*i
-hj := h*j
+# indirect effects (i*a, h*a)
+ia := 0.5*a
+ha := 0.5*a
+df := d*f
+eg := e*g
 
 
 # total effects 
-total_mum := c + (0.5*b) + (h*j) ###### THIS IS WHAT I HAVE ADDED - NOT SURE IF ITS RIGHT THO #####
-total_dad := f + (0.5*b) + (g*i) ###### THIS IS WHAT I HAVE ADDED - NOT SURE IF ITS RIGHT THO #####
+total_mum := c + (0.5*a) + (e*g)
+total_dad := b + (0.5*a) + (d*f) 
 
 # covariance
 mheiPRS_0.05 ~~ pheiPRS_0.05
@@ -1694,58 +1588,6 @@ extended_model <- cbind(sem_model_final, AIC(fitM))
 
 write.csv(extended_model, "heiPRS_0.05_pa_m2_bs_MALE.csv", row.names=F, quote=F)
 
-#############################
-#EXTENDED (RESTRICTED) MODEL#
-#############################
-
-rm(list=ls())
-data <- read.table("IGE_height_pathway_analysis_df", header=T)
-data <- subset(data, data$SEX=="M")
-data <- data[complete.cases(data),] #n=1150
-
-# Define model
-
-model <- ' 
-
-#direct effects
-HEIGHT ~ AGE+C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20
-
-#mediator
-heiPRS_0.05 ~ 0.5*mheiPRS_0.05
-heiPRS_0.05 ~ 0.5*pheiPRS_0.05
-
-HEIGHT ~ b*heiPRS_0.05
-
-pHEI_res ~ g*pheiPRS_0.05+pAGE
-mHEI_res ~ h*mheiPRS_0.05+mAGE
-
-HEIGHT ~ i*pHEI_res
-HEIGHT ~ j*mHEI_res
-
-# indirect effects (a*b, d*b)
-ab := 0.5*b
-db := 0.5*b
-gi := g*i
-hj := h*j
-
-
-# total effects 
-total_mum := (0.5*b) + (h*j) ###### THIS IS WHAT I HAVE ADDED - NOT SURE IF ITS RIGHT THO #####
-total_dad := (0.5*b) + (g*i) ###### THIS IS WHAT I HAVE ADDED - NOT SURE IF ITS RIGHT THO #####
-
-# covariance
-mheiPRS_0.05 ~~ pheiPRS_0.05
-mHEI_res ~~ pHEI_res
-'
-
-# Fit the model
-fitM <- sem(model, data=data, se="bootstrap", estimator='ML')
-sem_model <- summary(fitM, standardized=TRUE, fit.measures=TRUE, ci=TRUE)
-sem_model_df <- as.data.frame(sem_model$PE)
-sem_model_final <- sem_model_df[sem_model_df$label != "", c(1:4,6:7,9:11)] #here we are extracting values of interest e.g. est, se, p, ci
-extended_restricted_model <- cbind(sem_model_final, AIC(fitM))
-
-write.csv(extended_restricted_model, "heiPRS_0.05_pa_m3_bs_MALE.csv", row.names=F, quote=F)
 
 ```
 
@@ -1773,20 +1615,20 @@ model <- '
 # direct effects
 HEIGHT ~ AGE+SEX+C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20
 HEIGHT ~ c*mheiPRS_0.05
-HEIGHT ~ f*pheiPRS_0.05             
+HEIGHT ~ b*pheiPRS_0.05             
 
 # mediator
 heiPRS_0.05 ~ 0.5*mheiPRS_0.05
 heiPRS_0.05 ~ 0.5*pheiPRS_0.05
-HEIGHT ~ b*heiPRS_0.05
+HEIGHT ~ a*heiPRS_0.05
 
-# indirect effects (a*b, d*b)
-ab := 0.5*b
-db := 0.5*b
+# indirect effects (i*a, h*a)
+ia := 0.5*a
+ha := 0.5*a
 
 # total effects 
-total_mum := c + (0.5*b)
-total_dad := f + (0.5*b)
+total_mum := c + (0.5*a)
+total_dad := b + (0.5*a)
 
 # covariance
 mheiPRS_0.05 ~~ pheiPRS_0.05
@@ -1811,37 +1653,35 @@ data <- read.table("IGE_height_pathway_analysis_df", header=T)
 data <- data[!duplicated(data$NFID),]
 data <- data[complete.cases(data),] #n=1579
 
-# Define model
-
 model <- '
 
 #direct effects
 HEIGHT ~ AGE+SEX+C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20
 HEIGHT ~ c*mheiPRS_0.05
-HEIGHT ~ f*pheiPRS_0.05         
+HEIGHT ~ b*pheiPRS_0.05         
 
 #mediator
 heiPRS_0.05 ~ 0.5*mheiPRS_0.05
 heiPRS_0.05 ~ 0.5*pheiPRS_0.05 
 
-HEIGHT ~ b*heiPRS_0.05
+HEIGHT ~ a*heiPRS_0.05
 
-pHEI_res ~ g*pheiPRS_0.05+pAGE
-mHEI_res ~ h*mheiPRS_0.05+mAGE
+pHEI_res ~ d*pheiPRS_0.05+pAGE
+mHEI_res ~ e*mheiPRS_0.05+mAGE
 
-HEIGHT ~ i*pHEI_res
-HEIGHT ~ j*mHEI_res
+HEIGHT ~ f*pHEI_res
+HEIGHT ~ g*mHEI_res
 
-# indirect effects (a*b, d*b)
-ab := 0.5*b
-db := 0.5*b
-gi := g*i
-hj := h*j
+# indirect effects (i*a, h*a)
+ia := 0.5*a
+ha := 0.5*a
+df := d*f
+eg := e*g
 
 
 # total effects 
-total_mum := c + (0.5*b) + (h*j) ###### THIS IS WHAT I HAVE ADDED - NOT SURE IF ITS RIGHT THO #####
-total_dad := f + (0.5*b) + (g*i) ###### THIS IS WHAT I HAVE ADDED - NOT SURE IF ITS RIGHT THO #####
+total_mum := c + (0.5*a) + (e*g)
+total_dad := b + (0.5*a) + (d*f) 
 
 # covariance
 mheiPRS_0.05 ~~ pheiPRS_0.05
@@ -1858,58 +1698,6 @@ extended_model <- cbind(sem_model_final, AIC(fitM))
 
 write.csv(extended_model, "heiPRS_0.05_pa_m2_bs_nosib.csv", row.names=F, quote=F)
 
-#############################
-#EXTENDED (RESTRICTED) MODEL#
-#############################
-
-rm(list=ls())
-data <- read.table("IGE_height_pathway_analysis_df", header=T)
-data <- data[!duplicated(data$NFID),]
-data <- data[complete.cases(data),] #n=1579
-
-# Define model
-
-model <- ' 
-
-#direct effects
-HEIGHT ~ AGE+SEX+C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20
-
-#mediator
-heiPRS_0.05 ~ 0.5*mheiPRS_0.05
-heiPRS_0.05 ~ 0.5*pheiPRS_0.05
-
-HEIGHT ~ b*heiPRS_0.05
-
-pHEI_res ~ g*pheiPRS_0.05+pAGE
-mHEI_res ~ h*mheiPRS_0.05+mAGE
-
-HEIGHT ~ i*pHEI_res
-HEIGHT ~ j*mHEI_res
-
-# indirect effects (a*b, d*b)
-ab := 0.5*b
-db := 0.5*b
-gi := g*i
-hj := h*j
-
-
-# total effects 
-total_mum := (0.5*b) + (h*j) ###### THIS IS WHAT I HAVE ADDED - NOT SURE IF ITS RIGHT THO #####
-total_dad := (0.5*b) + (g*i) ###### THIS IS WHAT I HAVE ADDED - NOT SURE IF ITS RIGHT THO #####
-
-# covariance
-mheiPRS_0.05 ~~ pheiPRS_0.05
-mHEI_res ~~ pHEI_res
-'
-
-# Fit the model
-fitM <- sem(model, data=data, se="bootstrap", estimator='ML')
-sem_model <- summary(fitM, standardized=TRUE, fit.measures=TRUE, ci=TRUE)
-sem_model_df <- as.data.frame(sem_model$PE)
-sem_model_final <- sem_model_df[sem_model_df$label != "", c(1:4,6:7,9:11)] #here we are extracting values of interest e.g. est, se, p, ci
-extended_restricted_model <- cbind(sem_model_final, AIC(fitM))
-
-write.csv(extended_restricted_model, "heiPRS_0.05_pa_m3_bs_nosib.csv", row.names=F, quote=F)
 ```
 
 ## Maternal Duo Sample  
@@ -1936,13 +1724,13 @@ HEIGHT ~ c*mheiPRS_0.05
 
 # mediator
 heiPRS_0.05 ~ 0.5*mheiPRS_0.05
-HEIGHT ~ b*heiPRS_0.05
+HEIGHT ~ a*heiPRS_0.05
 
-# indirect effects (a*b)
-ab := 0.5*b
+# indirect effects (i*a)
+ia := 0.5*a
 
 # total effects 
-total_mum := c + (0.5*b)
+total_mum := c + (0.5*a)
 '
 
 # Fit the model
@@ -1974,19 +1762,19 @@ HEIGHT ~ c*mheiPRS_0.05
 #mediator
 heiPRS_0.05 ~ 0.5*mheiPRS_0.05
 
-HEIGHT ~ b*heiPRS_0.05
+HEIGHT ~ a*heiPRS_0.05
 
-mHEI_res ~ h*mheiPRS_0.05+mAGE
+mHEI_res ~ e*mheiPRS_0.05+mAGE
 
-HEIGHT ~ j*mHEI_res
+HEIGHT ~ g*mHEI_res
 
-# indirect effects (a*b, d*b)
-ab := 0.5*b
-hj := h*j
+# indirect effects (i*a, e*g)
+ia := 0.5*a
+eg := e*g
 
 
 # total effects 
-total_mum := c + (0.5*b) + (h*j) ###### THIS IS WHAT I HAVE ADDED - NOT SURE IF ITS RIGHT THO #####
+total_mum := c + (0.5*a) + (e*g) 
 
 '
 
@@ -1999,44 +1787,7 @@ extended_model <- cbind(sem_model_final, AIC(fitM))
 
 write.csv(extended_model, "heiPRS_0.05_pa_m2_bs_matduo.csv", row.names=F, quote=F)
 
-#############################
-#EXTENDED (RESTRICTED) MODEL#
-#############################
 
-rm(list=ls())
-data <- read.table("IGE_height_pathway_matduo_df", header=T)
-data <- data[complete.cases(data),] #n=5896
-
-# Define model
-
-model <- ' 
-
-#direct effects
-HEIGHT ~ AGE+SEX+C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20
-
-#mediator
-heiPRS_0.05 ~ 0.5*mheiPRS_0.05
-HEIGHT ~ b*heiPRS_0.05
-mHEI_res ~ h*mheiPRS_0.05+mAGE
-HEIGHT ~ j*mHEI_res
-
-# indirect effects (a*b, d*b)
-ab := 0.5*b
-hj := h*j
-
-
-# total effects 
-total_mum := (0.5*b) + (h*j) ###### THIS IS WHAT I HAVE ADDED - NOT SURE IF ITS RIGHT THO #####
-'
-
-# Fit the model
-fitM <- sem(model, data=data, se="bootstrap", estimator='ML')
-sem_model <- summary(fitM, standardized=TRUE, fit.measures=TRUE, ci=TRUE)
-sem_model_df <- as.data.frame(sem_model$PE)
-sem_model_final <- sem_model_df[sem_model_df$label != "", c(1:4,6:7,9:11)] #here we are extracting values of interest e.g. est, se, p, ci
-extended_restricted_model <- cbind(sem_model_final, AIC(fitM))
-
-write.csv(extended_restricted_model, "heiPRS_0.05_pa_m3_bs_matduo.csv", row.names=F, quote=F)
 ```
 
 ## Paternal Duo Sample  
@@ -2060,17 +1811,17 @@ model <- '
 # direct effects
 HEIGHT ~ AGE+SEX+C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20
 
-HEIGHT ~ f*pheiPRS_0.05             
+HEIGHT ~ b*pheiPRS_0.05             
 
 # mediator
 heiPRS_0.05 ~ 0.5*pheiPRS_0.05
-HEIGHT ~ b*heiPRS_0.05
+HEIGHT ~ a*heiPRS_0.05
 
-# indirect effects (a*b, d*b)
-db := 0.5*b
+# indirect effects (h*a)
+ha := 0.5*a
 
 # total effects 
-total_dad := f + (0.5*b)
+total_dad := b + (0.5*a)
 
 '
 
@@ -2098,25 +1849,25 @@ model <- '
 
 #direct effects
 HEIGHT ~ AGE+SEX+C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20
-HEIGHT ~ f*pheiPRS_0.05         
+HEIGHT ~ b*pheiPRS_0.05         
 
 #mediator
 heiPRS_0.05 ~ 0.5*pheiPRS_0.05 
 
-HEIGHT ~ b*heiPRS_0.05
+HEIGHT ~ a*heiPRS_0.05
 
-pHEI_res ~ g*pheiPRS_0.05+pAGE
+pHEI_res ~ d*pheiPRS_0.05+pAGE
 
-HEIGHT ~ i*pHEI_res
+HEIGHT ~ f*pHEI_res
 
-# indirect effects (a*b, d*b)
-db := 0.5*b
-gi := g*i
+# indirect effects (h*a, d*f)
+ha := 0.5*a
+df := d*f
 
 
 
 # total effects 
-total_dad := f + (0.5*b) + (g*i) ###### THIS IS WHAT I HAVE ADDED - NOT SURE IF ITS RIGHT THO #####
+total_dad := b + (0.5*a) + (d*f) 
 
 '
 
@@ -2129,46 +1880,5 @@ extended_model <- cbind(sem_model_final, AIC(fitM))
 
 write.csv(extended_model, "heiPRS_0.05_pa_m2_bs_patduo.csv", row.names=F, quote=F)
 
-#############################
-#EXTENDED (RESTRICTED) MODEL#
-#############################
-
-rm(list=ls())
-data <- read.table("IGE_height_pathway_patduo_df", header=T)
-data <- data[complete.cases(data),] #n=2732
-
-# Define model
-
-model <- ' 
-
-#direct effects
-HEIGHT ~ AGE+SEX+C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20
-
-#mediator
-heiPRS_0.05 ~ 0.5*pheiPRS_0.05
-HEIGHT ~ b*heiPRS_0.05
-pHEI_res ~ g*pheiPRS_0.05+pAGE
-HEIGHT ~ i*pHEI_res
-
-
-# indirect effects (a*b, d*b)
-db := 0.5*b
-gi := g*i
-
-
-
-# total effects 
-total_dad := (0.5*b) + (g*i) ###### THIS IS WHAT I HAVE ADDED - NOT SURE IF ITS RIGHT THO #####
-
-'
-
-# Fit the model
-fitM <- sem(model, data=data, se="bootstrap", estimator='ML')
-sem_model <- summary(fitM, standardized=TRUE, fit.measures=TRUE, ci=TRUE)
-sem_model_df <- as.data.frame(sem_model$PE)
-sem_model_final <- sem_model_df[sem_model_df$label != "", c(1:4,6:7,9:11)] #here we are extracting values of interest e.g. est, se, p, ci
-extended_restricted_model <- cbind(sem_model_final, AIC(fitM))
-
-write.csv(extended_restricted_model, "heiPRS_0.05_pa_m3_bs_patduo.csv", row.names=F, quote=F)
 ```
 

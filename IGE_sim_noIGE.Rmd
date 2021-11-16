@@ -315,17 +315,17 @@ cohort <- df[df$replica==replica,]
       offspring_phenotype ~ f*paternal_prs            
       
       #mediator
-      offspring_prs ~ a*maternal_prs
-      offspring_prs ~ d*paternal_prs
-      offspring_phenotype ~ b*offspring_prs
+      offspring_prs ~ i*maternal_prs
+      offspring_prs ~ h*paternal_prs
+      offspring_phenotype ~ a*offspring_prs
       
-      # indirect effects (a*b, d*b)
-      ab := a*b
-      db := d*b
+      # indirect effects (i*a, h*a)
+      ia := i*a
+      ha := h*a
       
       # total effects 
-      total_mum := c + (a*b)
-      total_dad := f + (d*b)
+      total_mum := c + (i*a)
+      total_dad := b + (h*a)
       '
         
       # Fit the model
@@ -349,26 +349,26 @@ cohort <- df[df$replica==replica,]
 
       #direct effects
       offspring_phenotype ~ c*maternal_prs
-      offspring_phenotype ~ f*paternal_prs        
+      offspring_phenotype ~ b*paternal_prs        
 
       #mediator
-      offspring_prs ~ a*maternal_prs
-      offspring_prs ~ d*paternal_prs 
-      offspring_phenotype ~ b*offspring_prs
-      paternal_phenotype ~ g*paternal_prs
-      maternal_phenotype ~ h*maternal_prs
-      offspring_phenotype ~ i*paternal_phenotype
-      offspring_phenotype ~ j*maternal_phenotype
+      offspring_prs ~ i*maternal_prs
+      offspring_prs ~ h*paternal_prs 
+      offspring_phenotype ~ a*offspring_prs
+      paternal_phenotype ~ d*paternal_prs
+      maternal_phenotype ~ e*maternal_prs
+      offspring_phenotype ~ f*paternal_phenotype
+      offspring_phenotype ~ g*maternal_phenotype
   
-      # indirect effects (a*b, d*b)
-      ab := a*b
-      db := d*b
-      gi := g*i
-      hj := h*j
+      # indirect effects 
+      ia := i*a
+      ha := h*a
+      df := d*f
+      eg := e*g
     
       # total effects 
-      total_mum := c + (a*b) + (h*j)
-      total_dad := f + (d*b) + (g*i)
+      total_mum := c + (i*a) + (e*g)
+      total_dad := b + (h*a) + (d*f)
     
       # covariance
       maternal_prs ~~ paternal_prs
@@ -384,54 +384,9 @@ cohort <- df[df$replica==replica,]
     
       sim_extended <- rbind(sim_extended, extended_model)
       
-      #############################
-      #EXTENDED (RESTRICTED) MODEL#
-      #############################
-        
-      # Define model
-        
-      model <- ' 
-
-      #direct effects
-
-      #mediator
-      offspring_prs ~ a*maternal_prs
-      offspring_prs ~ d*paternal_prs
-      offspring_phenotype ~ b*offspring_prs
-      paternal_phenotype ~ g*paternal_prs
-      maternal_phenotype ~ h*maternal_prs
-      offspring_phenotype ~ i*paternal_phenotype
-      offspring_phenotype ~ j*maternal_phenotype
-
-      # indirect effects (a*b, d*b)
-      ab := a*b
-      db := d*b
-      gi := g*i
-      hj := h*j
-
-
-      # total effects 
-
-      total_mum := (a*b) + (h*j) 
-      total_dad := (d*b) + (g*i) 
-
-      # covariance
-      maternal_prs ~~ paternal_prs
-      maternal_phenotype ~~ paternal_phenotype
-      '
-        
-      # Fit the model
-      fitM <- sem(model, data=cohort, estimator='ML')
-      sem_model <- summary(fitM, standardized=TRUE, fit.measures=TRUE, ci=TRUE)
-      sem_model_df <- as.matrix(sem_model$PE)
-      sem_model_final <- sem_model_df[sem_model_df[,4] != "", c(1,3:4,6,7,9:11)]
-      extended_restricted_model <- cbind(sem_model_final, AIC(fitM), replica, h2, tagged, prs_noise)
-	    sim_res_extended <- rbind(sim_res_extended, extended_restricted_model)
-      }
-
+ 
 write.csv(sim_simple, paste0("sim_pa_noIGE_m1_h2", h2, "_tagged", tagged, "_prsnoise", prs_noise, ".csv"), row.names=T, quote=F)
 write.csv(sim_extended, paste0("sim_pa_noIGE_m2_h2", h2, "_tagged", tagged, "_prsnoise", prs_noise, ".csv"), row.names=T, quote=F)
-write.csv(sim_res_extended, paste0("sim_pa_noIGE_m3_h2", h2, "_tagged", tagged, "_prsnoise", prs_noise, ".csv"), row.names=T, quote=F)
 
 ```
 
@@ -475,23 +430,6 @@ Row bind all result output files
 
       write.table(final, "sim_pa_noIGE_m2.txt", col.names=F, row.names=F, quote=F, append=T) 
       
-      #EXTENDED RESTRICTED MODEL
-      
-      final <- as.data.frame(matrix(NA, nrow=1, ncol=13))
-      colnames(final) <- c("DV", "IV", "label", "Estimate", "SE", "P-value", "lowerCI", "upperCI", "AIC", "replica", "h2", "Tagged", "prs_noise")
-      
-      for(h2 in c(0.3, 0.6, 0.9)){
-      for(tagged in c(0.2, 0.6, 1)){
-      for(prs_noise in seq(0,1,by=0.1)){
-        
-      df <- read.csv(paste0("sim_pa_noIGE_m3_h2", h2, "_tagged", tagged, "_prsnoise", prs_noise, ".csv"), header=T)
-      colnames(df) <- c("DV", "IV", "label", "Estimate", "SE", "P-value", "lowerCI", "upperCI", "AIC", "replica", "h2", "Tagged", "prs_noise")
-                       
-      final <- rbind(final, df)
-      
-      }}}
-
-      write.table(final, "sim_pa_noIGE_m3.txt", col.names=F, row.names=F, quote=F, append=T) 
 ```
 
 ## RESULT PLOTS  
