@@ -201,7 +201,7 @@ write.table(ghqd_trio, "clean_ghqd", row.names=F, quote=F)
 
 ```
 
-## Phenotype Demographics
+## Phenotype Demographics  
 
 *GHQ Total Demographics*
 Histogram + variance + sd (offspring)
@@ -275,6 +275,7 @@ var(ghqd_trio$p_ghqd)
 sd(ghqd_trio$p_ghqd)
 
 ```
+![](./IGE_Results/Slide1.PNG)
 
 # POLYGENIC RISK SCORES {.tabset}  
 
@@ -436,6 +437,7 @@ ghqt_prs
 
 #PRSs informed using SNPs with genome-wide association p-values <0.5 accounts for the greatest variance in our phenotypes
 ```
+![](./IGE_Results/Slide2.PNG)
 
 # SANITY CHECKS {.tabset}  
 
@@ -709,7 +711,7 @@ a <- a[seq(2,20,by=2),] #Not including intercepts
 write.csv(a, "depPRS_GHQT_associations_results_paternal.csv", row.names=F, quote=F)
 
 ```
-
+![](./IGE_Results/Slide3.PNG)
 ## Trio PGS Correlations   
 
 I am exploring PRSs generated using SNPs exceeding the p-value threshold of p<0.05  
@@ -745,6 +747,7 @@ summary(lm(pGHQD~pdepPRS_0.05, data=df))
 
 
 ```
+![](./IGE_Results/Slide6.PNG)
 
 # DATAFRAMES {.tabset}  
 
@@ -1264,6 +1267,7 @@ check2 <- check2[complete.cases(check2),] # n= 3364
 
 ```
 
+
 # REGRESSION ANALYSES {.tabset}  
 
 **ALL VARIABLES ARE STANDARDISED - INTERPRET ACCORDINGLY**  
@@ -1282,6 +1286,8 @@ Comparison of the models using log likelihood can help us infer whether the effe
 Sibling effects will be fitted as random effects in these models. The package lmerTest will be used. Siblings have the same parent IDs, so we can use this as an indicator variable that can be fixed as random.  
 
 Results for the following can be found in the supplementary materials Table 4 
+
+![](./IGE_Results/Slide9.PNG)
 
 ## GHQ Total (Psychological Distress) {.tabset}
 
@@ -1785,6 +1791,7 @@ write.csv(results, "GHQD_depPRS_0.05_reg_mixed_model_comparison_nosib.csv", row.
 
 ```
 
+
 # PATHWAY ANALYSES  {.tabset}  
 
 Pathway analyses can model the relationships between the IVs unlike regression models. Coefficients, however, can be interpreted in the same way you would with regression models.  
@@ -1794,10 +1801,15 @@ We will explore 2 different pathway models
 Simple model  
 Extended model  
 
+![](./IGE_Results/Slide11.PNG)
+
 Pathway analyses need to be run with SEs bootstrapped. We will also fix pathways between parental PGSs and offspring PGSs to 0.5, as the effect should be 0.5 as each parent passes on 50% of their genome to the offspring.  
 This will also mean we more degrees of freedom which impacts the analysis power to avoid type 1 and type 2 errors.  
 
 Note that parent phenotypes are pre-corrected for their own 20 principle components from a GRM of Generation Scotland. The phenotype was not pre-corrected for AGE, instead, this was included in the statistical model as this could provide useful information without making the results difficult to read.  
+
+![](./IGE_Results/Slide10.PNG)
+
 
 ## GHQ Total {.tabset}  
 

@@ -159,9 +159,11 @@ sd(df4$pHEIGHT)
 
 ```
 
+![](./IGE_Results/Slide1.PNG)
+
 # POLYGENIC RISK SCORES {.tabset}  
 
-We will use PRSice2 (Choi & O'Reilly., 2019) to generate the PRSs. We will pre-correct our phenotypes for covariates. We will use 1000G as a reference panel for LD estimation which will go onto guide pruning and clumping of SNPs. 
+We will use PRSice2 (Choi & O'Reilly., 2019) to generate the PGSs. We will pre-correct our phenotypes for covariates. We will use 1000G as a reference panel for LD estimation which will go onto guide pruning and clumping of SNPs. 
 
 Covariates include the first 20 principle components from a Genomics Relatedness Matrix of GS data, age and sex.   
 
@@ -277,7 +279,7 @@ Rscript PRSice.R\
 
 ```
 Summary of generated PRSs  
-Currently, PRSs informed by SNPs exceeding the genome-wide p-value threshold of 0.05 accounts for the greatest amount of variance in comparison to the other PRSs.  
+Currently, PGSs informed by SNPs exceeding the genome-wide p-value threshold of 0.05 accounts for the greatest amount of variance in comparison to the other PGSs.  
 histogram of PRSs standardised  
 
 ```{r, eval=FALSE}
@@ -303,6 +305,7 @@ hei_prs <- read.table("GSheight.prsice")
 hei_prs
 
 ```
+![](./IGE_Results/Slide2.PNG)
 
 # SANITY CHECKS {.tabset}  
 
@@ -476,8 +479,7 @@ a <- a[seq(2,20,by=2),] #Not including intercepts
 write.csv(a, "heiPRS_hei_associations_results_paternal.csv", row.names=F, quote=F)
 
 ```
-
-![.](./HeightResults/Slide2.PNG)
+![](./IGE_Results/Slide5.PNG)
 
 ## Trio PGS Correlations     
 
@@ -503,8 +505,7 @@ summary(lm(mHEIGHT~mheiPRS_0.05, data=df))
 summary(lm(pHEIGHT~pheiPRS_0.05, data=df))
 
 ```
-
-![.](./HeightResults/Slide3.PNG)
+![](./IGE_Results/Slide8.PNG)
 
 # DATAFRAMES {.tabset}  
 
@@ -879,17 +880,19 @@ write.table(df9, "IGE_height_pathway_patduo_df", row.names=F, quote=F) #n = 3865
 Meaning as the IV increases by 1 standard deviation, the DV increases by Estimate*SD  
 All parent phenotypes are pre-corrected for their own 20 principle components and AGE
 
-A. oHEI ~ oPRS *This model captures direct GE*  
-B. oHEI ~ oPRS + mPRS + pPRS *This model captures both direct and indirect GE*  
+*I*. oHEI ~ oPRS *This model captures direct GE*  
+*II*. oHEI ~ oPRS + mPRS + pPRS *This model captures both direct and indirect GE*  
 
 Models C and D can provide extra information  
 
-C. oHEI ~ oPRS + mHEI + pHEI  
-D. oHEI ~ oPRS + mHEI + pHEI + mPRS + pPRS  
+*III*. oHEI ~ oPRS + mHEI + pHEI  
+*IV*. oHEI ~ oPRS + mHEI + pHEI + mPRS + pPRS  
 
-Comparison of the models using log likelihood can help us infer whether the effects of indirect genetic effects are present (specifically comparison of model A vs B)  
+Comparison of the models using log likelihood can help us infer whether the effects of indirect genetic effects are present (specifically comparison of model *I* vs *II*)  
 
 There are siblings in my trio offsprings. It is important to control for these sibling effects which may bias the interpretation of results. Sibling effects will be fitted as random effects in these models. The package lmerTest will be used. Siblings have the same parent IDs, so we can use this as an indicator variable that can be fixed as random.  
+
+![](./IGE_Results/Slide9.PNG)
 
 ## Whole Sample  
 
@@ -937,23 +940,17 @@ avc$comparison <- "A_v_C"
 avd <- as.data.frame(anova(ModelA, ModelD))
 avd$comparison <- "A_v_D"
 
-bvc <- as.data.frame(anova(ModelB, ModelC))
-bvc$comparison <- "B_v_C"
-
 bvd <- as.data.frame(anova(ModelB, ModelD))
 bvd$comparison <- "B_v_D"
 
 cvd <- as.data.frame(anova(ModelC, ModelD))
 cvd$comparison <- "C_v_D"
 
-results <- bind_rows(avb, avc, avd, bvc, bvd, cvd)
-results[8,8] <- NA
+results <- bind_rows(avb, avc, avd, bvd, cvd)
 results$fdr <- p.adjust(results$`Pr(>Chisq)`, method="fdr", n=length(results$`Pr(>Chisq)`))
 write.csv(results, "heiPRS_0.05_reg_mixed_model_comparison.csv", row.names=T, quote=F)
 
 ```
-
-![.](./HeightResults/Slide4.PNG)  
 
 ## Female Only Sample  
 
@@ -1006,17 +1003,13 @@ avc$comparison <- "A_v_C"
 avd <- as.data.frame(anova(ModelA, ModelD))
 avd$comparison <- "A_v_D"
 
-bvc <- as.data.frame(anova(ModelB, ModelC))
-bvc$comparison <- "B_v_C"
-
 bvd <- as.data.frame(anova(ModelB, ModelD))
 bvd$comparison <- "B_v_D"
 
 cvd <- as.data.frame(anova(ModelC, ModelD))
 cvd$comparison <- "C_v_D"
 
-results <- bind_rows(avb, avc, avd, bvc, bvd, cvd)
-results[8,8] <- NA
+results <- bind_rows(avb, avc, avd, bvd, cvd)
 results$fdr <- p.adjust(results$`Pr(>Chisq)`, method="fdr", n=length(results$`Pr(>Chisq)`))
 write.csv(results, "heiPRS_0.05_reg_mixed_model_comparison_FEMALE.csv", row.names=T, quote=F)
 
@@ -1069,8 +1062,64 @@ avc$comparison <- "A_v_C"
 avd <- as.data.frame(anova(ModelA, ModelD))
 avd$comparison <- "A_v_D"
 
-bvc <- as.data.frame(anova(ModelB, ModelC))
-bvc$comparison <- "B_v_C"
+bvd <- as.data.frame(anova(ModelB, ModelD))
+bvd$comparison <- "B_v_D"
+
+cvd <- as.data.frame(anova(ModelC, ModelD))
+cvd$comparison <- "C_v_D"
+
+results <- bind_rows(avb, avc, avd, bvd, cvd)
+results[8,8] <- NA
+results$fdr <- p.adjust(results$`Pr(>Chisq)`, method="fdr", n=length(results$`Pr(>Chisq)`))
+write.csv(results, "heiPRS_0.05_reg_mixed_model_comparison_MALE.csv", row.names=T, quote=F)
+
+```
+
+## Singleton Sample
+
+```{r, eval=FALSE}
+rm(list=ls())
+
+library(lmerTest) #this package allows us to run regression models with fixed and random effects
+library(MuMIn) #this package allows us to obtain the R2 of our models, R2m (Marginal) R2 > fixed effects, R2c (Conditional) > whole model
+library(dplyr)
+
+regdf <- read.table("IGE_height_regression_df", header=T) #n=2648
+
+#Model 0 is to understand the variance that is being accounted for by the covariates 
+Model0 <- lm(HEIGHT~C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20+AGE+SEX, data=regdf)
+
+#only including results of AGE and SEX as this information is easy to understand and important
+results_0 <- as.data.frame(cbind(coef(summary(Model0))[c(1,22:23),], summary(Model0)$adj.r.squared))
+results_0$Model <- "Model0"
+
+ModelA <- lm(HEIGHT~C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20+AGE+SEX+heiPRS_0.05, data=regdf)
+results_A <- as.data.frame(cbind(coef(summary(ModelA))[c(1,24),], summary(ModelA)$adj.r.squared))
+results_A$Model <- "ModelA"
+
+ModelB <- lm(HEIGHT~C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20+AGE+SEX+heiPRS_0.05+mheiPRS_0.05+pheiPRS_0.05, data=regdf)   
+results_B <- as.data.frame(cbind(coef(summary(ModelB))[c(1,24:26),], summary(ModelB)$adj.r.squared))
+results_B$Model <- "ModelB"
+  
+ModelC <- lm(HEIGHT~C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20+AGE+SEX+heiPRS_0.05+mHEI_res+pHEI_res, data=regdf)   
+results_C <- as.data.frame(cbind(coef(summary(ModelC))[c(1,24:26),], summary(ModelC)$adj.r.squared))
+results_C$Model <- "ModelC"
+
+ModelD <- lm(HEIGHT~C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20+AGE+SEX+heiPRS_0.05+mheiPRS_0.05+pheiPRS_0.05+mHEI_res+pHEI_res, data=regdf)   
+results_D <- as.data.frame(cbind(coef(summary(ModelD))[c(1,24:28),], summary(ModelD)$adj.r.squared))
+results_D$Model <- "ModelD"
+
+results <- bind_rows(results_0, results_A, results_B, results_C, results_D)
+write.csv(results, "heiPRS_0.05_reg_mixed_models_nosib.csv", row.names=T, quote=F)
+
+avb <- as.data.frame(anova(ModelA, ModelB))
+avb$comparison <- "A_v_B"
+
+avc <- as.data.frame(anova(ModelA, ModelC))
+avc$comparison <- "A_v_C"
+
+avd <- as.data.frame(anova(ModelA, ModelD))
+avd$comparison <- "A_v_D"
 
 bvd <- as.data.frame(anova(ModelB, ModelD))
 bvd$comparison <- "B_v_D"
@@ -1078,10 +1127,9 @@ bvd$comparison <- "B_v_D"
 cvd <- as.data.frame(anova(ModelC, ModelD))
 cvd$comparison <- "C_v_D"
 
-results <- bind_rows(avb, avc, avd, bvc, bvd, cvd)
-results[8,8] <- NA
-results$fdr <- p.adjust(results$`Pr(>Chisq)`, method="fdr", n=length(results$`Pr(>Chisq)`))
-write.csv(results, "heiPRS_0.05_reg_mixed_model_comparison_MALE.csv", row.names=T, quote=F)
+results <- bind_rows(avb, avc, avd, bvd, cvd)
+results$fdr <- p.adjust(results$`Pr(>F)`, method="fdr", n=length(results$`Pr(>F)`))
+write.csv(results, "heiPRS_0.05_reg_mixed_model_comparison_nosib.csv", row.names=T, quote=F)
 
 ```
 
@@ -1092,13 +1140,14 @@ Pathway analyses can model the relationships between the IVs unlike regression m
 We will explore 3 different pathway models  
 
 Simple model  
-![.](./HeightResults/Slide5.PNG)
-Extended (Restricted) model   
-![.](./HeightResults/Slide6.PNG)
 Extended model  
-![.](./HeightResults/Slide7.PNG)
+![](./IGE_Results/Slide11.PNG)  
 
-## Paths a,d Restricted  
+Results can be found in supplementary Table 4.
+
+![](./IGE_Results/Slide10.PNG)
+
+## Paths h,i Restricted  
 
 Pathway analyses need to be run with SEs bootstrapped. We will also fix pathways a and d to 0.5 as the effect of parental PRS on offspring PRS should be 0.5 as each parent passes on 50% of their genome to the offspring. This will also mean we more degrees of freedom which impacts the analysis power to avoid type 1 and type 2 errors.  
 
@@ -1110,7 +1159,7 @@ Note that parent phenotypes are pre-corrected for their own 20 principle compone
 rm(list=ls())
 library(lavaan)
 
-data <- read.table("IGE_height_pathway_analysis_df", header=T)
+data <- read.table("IGE_height_pathway_df", header=T)
 data <- data[complete.cases(data),] #n=2648
 
 ##############
@@ -1144,21 +1193,21 @@ mheiPRS_0.05 ~~ pheiPRS_0.05
 '
 
 # Fit the model
-fitM <- sem(model, data=data, se="bootstrap", estimator='ML')
+fitM <- sem(model, data=data, estimator='ML')
 
 sem_model <- summary(fitM, standardized=TRUE, fit.measures=TRUE, ci=TRUE)
 sem_model_df <- as.data.frame(sem_model$PE)
 sem_model_final <- sem_model_df[sem_model_df$label != "", c(1:4,6:7,9:11)] #here we are extracting values of interest e.g. est, se, p, ci
 simple_model <- cbind(sem_model_final, AIC(fitM))
 
-write.csv(simple_model, "heiPRS_0.05_pa_m1_bs.csv", row.names=F, quote=F)
+write.csv(simple_model, "heiPRS_0.05_pa_m1.csv", row.names=F, quote=F)
 
 ################
 #EXTENDED MODEL#
 ################
 
 rm(list=ls())
-data <- read.table("IGE_height_pathway_analysis_df", header=T)
+data <- read.table("IGE_height_pathway_df", header=T)
 data <- data[complete.cases(data),]
 
 # Define model
@@ -1200,30 +1249,24 @@ mHEI_res ~~ pHEI_res
 '
 
 # Fit the model
-fitM <- sem(model, data=data, se="bootstrap", estimator='ML')
+fitM <- sem(model, data=data, estimator='ML')
 sem_model <- summary(fitM, standardized=TRUE, fit.measures=TRUE, ci=TRUE)
 sem_model_df <- as.data.frame(sem_model$PE)
 sem_model_final <- sem_model_df[sem_model_df$label != "", c(1:4,6:7,9:11)] #here we are extracting values of interest e.g. est, se, p, ci
 extended_model <- cbind(sem_model_final, AIC(fitM))
 
-write.csv(extended_model, "heiPRS_0.05_pa_m2_bs.csv", row.names=F, quote=F)
+write.csv(extended_model, "heiPRS_0.05_pa_m2.csv", row.names=F, quote=F)
 
 ```
 
-![.](./HeightResults/Slide8.PNG)
-
 ## Paths Freely Estimated  
-
-Results for subsequent sanity check analyses can be found in the supplementary materials    
-
-For a sanity check, the pathway models will be implemented where all paths are freely estimated. We are interested, particularly, in paths a and d, are the free estimations in line with what we expect ~0.5?  
 
 ```{r, eval=FALSE}
 
 rm(list=ls())
 library(lavaan)
 
-data <- read.table("IGE_height_pathway_analysis_df", header=T)
+data <- read.table("IGE_height_pathway_df", header=T)
 data <- data[complete.cases(data),] #n=2648
 
 ##############
@@ -1240,8 +1283,8 @@ HEIGHT ~ c*mheiPRS_0.05
 HEIGHT ~ b*pheiPRS_0.05             
 
 # mediator
-heiPRS_0.05 ~ 0.5*mheiPRS_0.05
-heiPRS_0.05 ~ 0.5*pheiPRS_0.05
+heiPRS_0.05 ~ i*mheiPRS_0.05
+heiPRS_0.05 ~ h*pheiPRS_0.05
 HEIGHT ~ a*heiPRS_0.05
 
 # indirect effects (i*a, h*a)
@@ -1257,21 +1300,21 @@ mheiPRS_0.05 ~~ pheiPRS_0.05
 '
 
 # Fit the model
-fitM <- sem(model, data=data, se="bootstrap", estimator='ML')
+fitM <- sem(model, data=data, estimator='ML')
 
 sem_model <- summary(fitM, standardized=TRUE, fit.measures=TRUE, ci=TRUE)
 sem_model_df <- as.data.frame(sem_model$PE)
 sem_model_final <- sem_model_df[sem_model_df$label != "", c(1:4,6:7,9:11)] #here we are extracting values of interest e.g. est, se, p, ci
 simple_model <- cbind(sem_model_final, AIC(fitM))
 
-write.csv(simple_model, "heiPRS_0.05_pa_m1_bs_fm.csv", row.names=F, quote=F) #fm stands for free model
+write.csv(simple_model, "heiPRS_0.05_pa_m1_fm.csv", row.names=F, quote=F) #fm stands for free model
 
 ################
 #EXTENDED MODEL#
 ################
 
 rm(list=ls())
-data <- read.table("IGE_height_pathway_analysis_df", header=T)
+data <- read.table("IGE_height_pathway_df", header=T)
 data <- data[complete.cases(data),]
 
 # Define model
@@ -1313,16 +1356,124 @@ mHEI_res ~~ pHEI_res
 '
 
 # Fit the model
-fitM <- sem(model, data=data, se="bootstrap", estimator='ML')
+fitM <- sem(model, data=data, estimator='ML')
 sem_model <- summary(fitM, standardized=TRUE, fit.measures=TRUE, ci=TRUE)
 sem_model_df <- as.data.frame(sem_model$PE)
 sem_model_final <- sem_model_df[sem_model_df$label != "", c(1:4,6:7,9:11)] #here we are extracting values of interest e.g. est, se, p, ci
 extended_model <- cbind(sem_model_final, AIC(fitM))
 
-write.csv(extended_model, "heiPRS_0.05_pa_m2_bs_fm.csv", row.names=F, quote=F)
+write.csv(extended_model, "heiPRS_0.05_pa_m2_fm.csv", row.names=F, quote=F)
 
 ```
  
+## Parent PGS Covariance  
+
+Here we will run the analyses WITHOUT controlling for parent PGS covariance to see if results change vastly, we want to see if this is effectively controlling for assortative mating effects.  
+
+```{r, eval=FALSE}
+
+rm(list=ls())
+library(lavaan)
+
+data <- read.table("IGE_height_pathway_df", header=T)
+data <- data[complete.cases(data),] #n=2648
+
+##############
+#SIMPLE MODEL#
+##############
+
+# Define model
+
+model <- ' 
+
+# direct effects
+HEIGHT ~ AGE+SEX+C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20
+HEIGHT ~ c*mheiPRS_0.05
+HEIGHT ~ b*pheiPRS_0.05             
+
+# mediator
+heiPRS_0.05 ~ i*mheiPRS_0.05
+heiPRS_0.05 ~ h*pheiPRS_0.05
+HEIGHT ~ a*heiPRS_0.05
+
+# indirect effects (i*a, h*a)
+ia := i*a
+ha := h*a
+
+# total effects 
+total_mum := c + (i*a)
+total_dad := b + (h*a)
+
+# covariance
+
+'
+
+# Fit the model
+fitM <- sem(model, data=data, estimator='ML')
+
+sem_model <- summary(fitM, standardized=TRUE, fit.measures=TRUE, ci=TRUE)
+sem_model_df <- as.data.frame(sem_model$PE)
+sem_model_final <- sem_model_df[sem_model_df$label != "", c(1:4,6:7,9:11)] #here we are extracting values of interest e.g. est, se, p, ci
+simple_model <- cbind(sem_model_final, AIC(fitM))
+
+write.csv(simple_model, "heiPRS_0.05_pa_m1_parentPGScov_notcontrolled.csv", row.names=F, quote=F) #fm stands for free model
+
+################
+#EXTENDED MODEL#
+################
+
+rm(list=ls())
+data <- read.table("IGE_height_pathway_df", header=T)
+data <- data[complete.cases(data),]
+
+# Define model
+
+model <- '
+
+#direct effects
+HEIGHT ~ AGE+SEX+C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20
+HEIGHT ~ c*mheiPRS_0.05
+HEIGHT ~ b*pheiPRS_0.05         
+
+#mediator
+heiPRS_0.05 ~ i*mheiPRS_0.05
+heiPRS_0.05 ~ h*pheiPRS_0.05 
+
+HEIGHT ~ a*heiPRS_0.05
+
+pHEI_res ~ d*pheiPRS_0.05+pAGE
+mHEI_res ~ e*mheiPRS_0.05+mAGE
+
+HEIGHT ~ f*pHEI_res
+HEIGHT ~ g*mHEI_res
+
+# indirect effects (i*a, h*a)
+ia := i*a
+ha := h*a
+df := d*f
+eg := e*g
+
+
+# total effects 
+total_mum := c + (i*a) + (e*g)
+total_dad := b + (h*a) + (d*f) 
+
+# covariance
+
+'
+
+# Fit the model
+fitM <- sem(model, data=data, estimator='ML')
+sem_model <- summary(fitM, standardized=TRUE, fit.measures=TRUE, ci=TRUE)
+sem_model_df <- as.data.frame(sem_model$PE)
+sem_model_final <- sem_model_df[sem_model_df$label != "", c(1:4,6:7,9:11)] #here we are extracting values of interest e.g. est, se, p, ci
+extended_model <- cbind(sem_model_final, AIC(fitM))
+
+write.csv(extended_model, "heiPRS_0.05_pa_m2_parentPGScov_notcontrolled.csv", row.names=F, quote=F)
+
+```
+
+
 ## Female Only Sample  
 
 ```{r, eval=FALSE}
@@ -1330,7 +1481,7 @@ write.csv(extended_model, "heiPRS_0.05_pa_m2_bs_fm.csv", row.names=F, quote=F)
 rm(list=ls())
 library(lavaan)
 
-data <- read.table("IGE_height_pathway_analysis_df", header=T)
+data <- read.table("IGE_height_pathway_df", header=T)
 data <- subset(data, data$SEX=="F")
 data <- data[complete.cases(data),] #n=1498
 
@@ -1365,21 +1516,21 @@ mheiPRS_0.05 ~~ pheiPRS_0.05
 '
 
 # Fit the model
-fitM <- sem(model, data=data, se="bootstrap", estimator='ML')
+fitM <- sem(model, data=data, estimator='ML')
 
 sem_model <- summary(fitM, standardized=TRUE, fit.measures=TRUE, ci=TRUE)
 sem_model_df <- as.data.frame(sem_model$PE)
 sem_model_final <- sem_model_df[sem_model_df$label != "", c(1:4,6:7,9:11)] #here we are extracting values of interest e.g. est, se, p, ci
 simple_model <- cbind(sem_model_final, AIC(fitM))
 
-write.csv(simple_model, "heiPRS_0.05_pa_m1_bs_FEMALE.csv", row.names=F, quote=F)
+write.csv(simple_model, "heiPRS_0.05_pa_m1_FEMALE.csv", row.names=F, quote=F)
 
 ################
 #EXTENDED MODEL#
 ################
 
 rm(list=ls())
-data <- read.table("IGE_height_pathway_analysis_df", header=T)
+data <- read.table("IGE_height_pathway_df", header=T)
 data <- subset(data, data$SEX=="F")
 data <- data[complete.cases(data),] #n=1498
 
@@ -1420,66 +1571,13 @@ mHEI_res ~~ pHEI_res
 '
 
 # Fit the model
-fitM <- sem(model, data=data, se="bootstrap", estimator='ML')
+fitM <- sem(model, data=data, estimator='ML')
 sem_model <- summary(fitM, standardized=TRUE, fit.measures=TRUE, ci=TRUE)
 sem_model_df <- as.data.frame(sem_model$PE)
 sem_model_final <- sem_model_df[sem_model_df$label != "", c(1:4,6:7,9:11)] #here we are extracting values of interest e.g. est, se, p, ci
 extended_model <- cbind(sem_model_final, AIC(fitM))
 
-write.csv(extended_model, "heiPRS_0.05_pa_m2_bs_FEMALE.csv", row.names=F, quote=F)
-
-#############################
-#EXTENDED (RESTRICTED) MODEL#
-#############################
-
-rm(list=ls())
-data <- read.table("IGE_height_pathway_analysis_df", header=T)
-data <- subset(data, data$SEX=="F")
-data <- data[complete.cases(data),] #n=1498
-
-# Define model
-
-model <- ' 
-
-#direct effects
-HEIGHT ~ AGE+C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20
-
-#mediator
-heiPRS_0.05 ~ 0.5*mheiPRS_0.05
-heiPRS_0.05 ~ 0.5*pheiPRS_0.05
-
-HEIGHT ~ b*heiPRS_0.05
-
-pHEI_res ~ g*pheiPRS_0.05+pAGE
-mHEI_res ~ h*mheiPRS_0.05+mAGE
-
-HEIGHT ~ i*pHEI_res
-HEIGHT ~ j*mHEI_res
-
-# indirect effects (a*b, d*b)
-ab := 0.5*b
-db := 0.5*b
-gi := g*i
-hj := h*j
-
-
-# total effects 
-total_mum := (0.5*b) + (h*j) ###### THIS IS WHAT I HAVE ADDED - NOT SURE IF ITS RIGHT THO #####
-total_dad := (0.5*b) + (g*i) ###### THIS IS WHAT I HAVE ADDED - NOT SURE IF ITS RIGHT THO #####
-
-# covariance
-mheiPRS_0.05 ~~ pheiPRS_0.05
-mHEI_res ~~ pHEI_res
-'
-
-# Fit the model
-fitM <- sem(model, data=data, se="bootstrap", estimator='ML')
-sem_model <- summary(fitM, standardized=TRUE, fit.measures=TRUE, ci=TRUE)
-sem_model_df <- as.data.frame(sem_model$PE)
-sem_model_final <- sem_model_df[sem_model_df$label != "", c(1:4,6:7,9:11)] #here we are extracting values of interest e.g. est, se, p, ci
-extended_restricted_model <- cbind(sem_model_final, AIC(fitM))
-
-write.csv(extended_restricted_model, "heiPRS_0.05_pa_m3_bs_FEMALE.csv", row.names=F, quote=F)
+write.csv(extended_model, "heiPRS_0.05_pa_m2_FEMALE.csv", row.names=F, quote=F)
 
 ```
 
@@ -1490,7 +1588,7 @@ write.csv(extended_restricted_model, "heiPRS_0.05_pa_m3_bs_FEMALE.csv", row.name
 rm(list=ls())
 library(lavaan)
 
-data <- read.table("IGE_height_pathway_analysis_df", header=T)
+data <- read.table("IGE_height_pathway_df", header=T)
 data <- subset(data, data$SEX=="M")
 data <- data[complete.cases(data),] ##n=1150
 
@@ -1525,21 +1623,21 @@ mheiPRS_0.05 ~~ pheiPRS_0.05
 '
 
 # Fit the model
-fitM <- sem(model, data=data, se="bootstrap", estimator='ML')
+fitM <- sem(model, data=data, estimator='ML')
 
 sem_model <- summary(fitM, standardized=TRUE, fit.measures=TRUE, ci=TRUE)
 sem_model_df <- as.data.frame(sem_model$PE)
 sem_model_final <- sem_model_df[sem_model_df$label != "", c(1:4,6:7,9:11)] #here we are extracting values of interest e.g. est, se, p, ci
 simple_model <- cbind(sem_model_final, AIC(fitM))
 
-write.csv(simple_model, "heiPRS_0.05_pa_m1_bs_MALE.csv", row.names=F, quote=F)
+write.csv(simple_model, "heiPRS_0.05_pa_m1_MALE.csv", row.names=F, quote=F)
 
 ################
 #EXTENDED MODEL#
 ################
 
 rm(list=ls())
-data <- read.table("IGE_height_pathway_analysis_df", header=T)
+data <- read.table("IGE_height_pathway_df", header=T)
 data <- subset(data, data$SEX=="M")
 data <- data[complete.cases(data),] ##n=1150
 
@@ -1580,13 +1678,13 @@ mHEI_res ~~ pHEI_res
 '
 
 # Fit the model
-fitM <- sem(model, data=data, se="bootstrap", estimator='ML')
+fitM <- sem(model, data=data, estimator='ML')
 sem_model <- summary(fitM, standardized=TRUE, fit.measures=TRUE, ci=TRUE)
 sem_model_df <- as.data.frame(sem_model$PE)
 sem_model_final <- sem_model_df[sem_model_df$label != "", c(1:4,6:7,9:11)] #here we are extracting values of interest e.g. est, se, p, ci
 extended_model <- cbind(sem_model_final, AIC(fitM))
 
-write.csv(extended_model, "heiPRS_0.05_pa_m2_bs_MALE.csv", row.names=F, quote=F)
+write.csv(extended_model, "heiPRS_0.05_pa_m2_MALE.csv", row.names=F, quote=F)
 
 
 ```
@@ -1600,7 +1698,7 @@ Removing siblings to double check that estimates do not change substantially
 rm(list=ls())
 library(lavaan)
 library(dplyr)
-data <- read.table("IGE_height_pathway_analysis_df", header=T)
+data <- read.table("IGE_height_pathway_df", header=T)
 data <- data[!duplicated(data$NFID),] #removing 1 individual from a sibling group
 data <- data[complete.cases(data),] #n=1579
 
@@ -1635,21 +1733,21 @@ mheiPRS_0.05 ~~ pheiPRS_0.05
 '
 
 # Fit the model
-fitM <- sem(model, data=data, se="bootstrap", estimator='ML')
+fitM <- sem(model, data=data, estimator='ML')
 
 sem_model <- summary(fitM, standardized=TRUE, fit.measures=TRUE, ci=TRUE)
 sem_model_df <- as.data.frame(sem_model$PE)
 sem_model_final <- sem_model_df[sem_model_df$label != "", c(1:4,6:7,9:11)] #here we are extracting values of interest e.g. est, se, p, ci
 simple_model <- cbind(sem_model_final, AIC(fitM))
 
-write.csv(simple_model, "heiPRS_0.05_pa_m1_bs_nosib.csv", row.names=F, quote=F)
+write.csv(simple_model, "heiPRS_0.05_pa_m1_nosib.csv", row.names=F, quote=F)
 
 ################
 #EXTENDED MODEL#
 ################
 
 rm(list=ls())
-data <- read.table("IGE_height_pathway_analysis_df", header=T)
+data <- read.table("IGE_height_pathway_df", header=T)
 data <- data[!duplicated(data$NFID),]
 data <- data[complete.cases(data),] #n=1579
 
@@ -1690,13 +1788,13 @@ mHEI_res ~~ pHEI_res
 '
 
 # Fit the model
-fitM <- sem(model, data=data, se="bootstrap", estimator='ML')
+fitM <- sem(model, data=data, estimator='ML')
 sem_model <- summary(fitM, standardized=TRUE, fit.measures=TRUE, ci=TRUE)
 sem_model_df <- as.data.frame(sem_model$PE)
 sem_model_final <- sem_model_df[sem_model_df$label != "", c(1:4,6:7,9:11)] #here we are extracting values of interest e.g. est, se, p, ci
 extended_model <- cbind(sem_model_final, AIC(fitM))
 
-write.csv(extended_model, "heiPRS_0.05_pa_m2_bs_nosib.csv", row.names=F, quote=F)
+write.csv(extended_model, "heiPRS_0.05_pa_m2_nosib.csv", row.names=F, quote=F)
 
 ```
 
@@ -1734,14 +1832,14 @@ total_mum := c + (0.5*a)
 '
 
 # Fit the model
-fitM <- sem(model, data=data, se="bootstrap", estimator='ML')
+fitM <- sem(model, data=data, estimator='ML')
 
 sem_model <- summary(fitM, standardized=TRUE, fit.measures=TRUE, ci=TRUE)
 sem_model_df <- as.data.frame(sem_model$PE)
 sem_model_final <- sem_model_df[sem_model_df$label != "", c(1:4,6:7,9:11)] #here we are extracting values of interest e.g. est, se, p, ci
 simple_model <- cbind(sem_model_final, AIC(fitM))
 
-write.csv(simple_model, "heiPRS_0.05_pa_m1_bs_matduo.csv", row.names=F, quote=F)
+write.csv(simple_model, "heiPRS_0.05_pa_m1_matduo.csv", row.names=F, quote=F)
 
 ################
 #EXTENDED MODEL#
@@ -1785,7 +1883,7 @@ sem_model_df <- as.data.frame(sem_model$PE)
 sem_model_final <- sem_model_df[sem_model_df$label != "", c(1:4,6:7,9:11)] #here we are extracting values of interest e.g. est, se, p, ci
 extended_model <- cbind(sem_model_final, AIC(fitM))
 
-write.csv(extended_model, "heiPRS_0.05_pa_m2_bs_matduo.csv", row.names=F, quote=F)
+write.csv(extended_model, "heiPRS_0.05_pa_m2_matduo.csv", row.names=F, quote=F)
 
 
 ```
@@ -1826,14 +1924,14 @@ total_dad := b + (0.5*a)
 '
 
 # Fit the model
-fitM <- sem(model, data=data, se="bootstrap", estimator='ML')
+fitM <- sem(model, data=data, estimator='ML')
 
 sem_model <- summary(fitM, standardized=TRUE, fit.measures=TRUE, ci=TRUE)
 sem_model_df <- as.data.frame(sem_model$PE)
 sem_model_final <- sem_model_df[sem_model_df$label != "", c(1:4,6:7,9:11)] #here we are extracting values of interest e.g. est, se, p, ci
 simple_model <- cbind(sem_model_final, AIC(fitM))
 
-write.csv(simple_model, "heiPRS_0.05_pa_m1_bs_patduo.csv", row.names=F, quote=F)
+write.csv(simple_model, "heiPRS_0.05_pa_m1_patduo.csv", row.names=F, quote=F)
 
 ################
 #EXTENDED MODEL#
@@ -1878,7 +1976,7 @@ sem_model_df <- as.data.frame(sem_model$PE)
 sem_model_final <- sem_model_df[sem_model_df$label != "", c(1:4,6:7,9:11)] #here we are extracting values of interest e.g. est, se, p, ci
 extended_model <- cbind(sem_model_final, AIC(fitM))
 
-write.csv(extended_model, "heiPRS_0.05_pa_m2_bs_patduo.csv", row.names=F, quote=F)
+write.csv(extended_model, "heiPRS_0.05_pa_m2_patduo.csv", row.names=F, quote=F)
 
 ```
 

@@ -13,7 +13,13 @@ knitr::opts_chunk$set(echo = TRUE)
 
 # Explore Indirect Genetic Effects using Regressions and Pathway Analyses
 # Aim 
-I will be using trio's full polygenic risk scores rather than splitting PRSs into transmitted and non-transmitted counterparts.
+I will be using trio's full polygenic risk scores (PGSs) rather than splitting PGSs into transmitted and non-transmitted counterparts.
+
+```{r, eval=FALSE}
+library(lme4)
+library(lavaan)
+library(dplyr)
+```
 
 # GS TRIOS  
 
@@ -42,7 +48,8 @@ write.table(trio, "GS_trio", row.names=F, quote=F)
 
 # PHENOTYPES {.tabset}  
 
-Our phenotype of interest is educational attainment, defined as 'years of education'. EA is provided on a likert scale from 1-10, with higher values suggesting a greater number of years of education. We can find this in the masterDB.Rdata file which can found on datastore @/exports/igmm/GenScotDepression/data/genscot/phenotypes/masterDB.Rdata  
+Our phenotype of interest is educational attainment, defined as 'years of education'.  
+EA is provided on a likert scale from 1-10, with higher values suggesting a greater number of years of education. We can find this in the masterDB.Rdata file which can found on datastore @/exports/igmm/GenScotDepression/data/genscot/phenotypes/masterDB.Rdata  
 
 ## Educational Attainment
 
@@ -147,6 +154,7 @@ var(df4$pEA)
 sd(df4$pEA)
 
 ```
+![](./IGE_Results/Slide1.PNG)
 
 # POLYGENIC RISK SCORES {.tabset}  
 
@@ -294,6 +302,8 @@ ea_prs <- read.table("GSea.prsice")
 ea_prs
 
 ```
+![](./IGE_Results/Slide2.PNG)  
+
 
 # SANITY CHECKS {.tabset}  
 
@@ -459,8 +469,7 @@ colnames(a) <- c("Threshold", "Estimate", "StdErr", "t", "p", "AdjR2")
 a <- a[seq(2,20,by=2),] #Not including intercepts
 write.csv(a, "EAPRS_EA_associations_results_paternal.csv", row.names=F, quote=F)
 ```
-
-![.](./EducationResults/Slide2.PNG)
+![](./IGE_Results/Slide4.PNG)
 
 ## Trio PGS Correlations     
 
@@ -486,7 +495,7 @@ summary(lm(mEA~meaPRS_0.05, data=df))
 summary(lm(pEA~peaPRS_0.05, data=df))
 
 ```
-![.](./EducationResults/Slide3.PNG)
+![](./IGE_Results/Slide7.PNG)
 
 # DATAFRAMES {.tabset}  
 
@@ -783,21 +792,22 @@ names(df9)
 write.table(df9, "IGE_ea_pathway_patduo_df", row.names=F, quote=F) #n = 3865
 ```
 
-
 # REGRESSION ANALYSES {.tabset}   
 
 **ALL VARIABLES ARE STANDARDISED - INTERPRET ACCORDINGLY**  
 Meaning as the IV increases by 1 standard deviation, the DV increases by Estimate*SD  
 All parent phenotypes are pre-corrected for their own 20 principle components and AGE
 
-A. oEA ~ oPRS *This model captures direct GE*  
-B. oEA ~ oPRS + mPRS + pPRS *This model captures both direct and indirect GE*  
+*I*. oEA ~ oPRS *This model captures direct GE*  
+*II*. oEA ~ oPRS + mPRS + pPRS *This model captures both direct and indirect GE*  
   
-C. oEA ~ oPRS + mEA + pEA  
-D. oEA ~ oPRS + mEA + pEA + mPRS + pPRS  
+*I*. oEA ~ oPRS + mEA + pEA  
+*II*. oEA ~ oPRS + mEA + pEA + mPRS + pPRS  
 
 *We are not interpreting beta estimates as these are likely to be biased/inaccurate as variables in the models are correlated!*
-Comparison of the models using log likelihood can help us infer whether the effects of indirect genetic effects are present (specifically comparison of model A vs B)  
+Comparison of the models using log likelihood can help us infer whether the effects of indirect genetic effects are present (specifically comparison of model *I* and *II*)  
+
+![](./IGE_Results/Slide9.PNG)
 
 ## Whole Sample  
 
@@ -847,23 +857,17 @@ avc$comparison <- "A_v_C"
 avd <- as.data.frame(anova(ModelA, ModelD))
 avd$comparison <- "A_v_D"
 
-bvc <- as.data.frame(anova(ModelB, ModelC))
-bvc$comparison <- "B_v_C"
-
 bvd <- as.data.frame(anova(ModelB, ModelD))
 bvd$comparison <- "B_v_D"
 
 cvd <- as.data.frame(anova(ModelC, ModelD))
 cvd$comparison <- "C_v_D"
 
-results <- bind_rows(avb, avc, avd, bvc, bvd, cvd)
-results[8,8] <- NA
+results <- bind_rows(avb, avc, avd, bvd, cvd)
 results$fdr <- p.adjust(results$`Pr(>Chisq)`, method="fdr", n=length(results$`Pr(>Chisq)`))
 write.csv(results, "eaPRS_0.05_reg_mixed_model_comparison.csv", row.names=T, quote=F)
 
 ```
-
-![.](./EducationResults/Slide4.PNG)  
 
 Results for the following can be found in the supplementary materials sheet 3  
 
@@ -917,17 +921,13 @@ avc$comparison <- "A_v_C"
 avd <- as.data.frame(anova(ModelA, ModelD))
 avd$comparison <- "A_v_D"
 
-bvc <- as.data.frame(anova(ModelB, ModelC))
-bvc$comparison <- "B_v_C"
-
 bvd <- as.data.frame(anova(ModelB, ModelD))
 bvd$comparison <- "B_v_D"
 
 cvd <- as.data.frame(anova(ModelC, ModelD))
 cvd$comparison <- "C_v_D"
 
-results <- bind_rows(avb, avc, avd, bvc, bvd, cvd)
-results[8,8] <- NA
+results <- bind_rows(avb, avc, avd, bvd, cvd)
 results$fdr <- p.adjust(results$`Pr(>Chisq)`, method="fdr", n=length(results$`Pr(>Chisq)`))
 write.csv(results, "eaPRS_0.05_reg_mixed_model_comparison_FEMALE.csv", row.names=T, quote=F)
 
@@ -981,8 +981,63 @@ avc$comparison <- "A_v_C"
 avd <- as.data.frame(anova(ModelA, ModelD))
 avd$comparison <- "A_v_D"
 
-bvc <- as.data.frame(anova(ModelB, ModelC))
-bvc$comparison <- "B_v_C"
+bvd <- as.data.frame(anova(ModelB, ModelD))
+bvd$comparison <- "B_v_D"
+
+cvd <- as.data.frame(anova(ModelC, ModelD))
+cvd$comparison <- "C_v_D"
+
+results <- bind_rows(avb, avc, avd, bvd, cvd)
+results$fdr <- p.adjust(results$`Pr(>Chisq)`, method="fdr", n=length(results$`Pr(>Chisq)`))
+write.csv(results, "eaPRS_0.05_reg_mixed_model_comparison_MALE.csv", row.names=T, quote=F)
+
+```
+
+## Singleton Sample
+
+```{r, eval=FALSE}
+rm(list=ls())
+
+library(lmerTest) #this package allows us to run regression models with fixed and random effects
+library(MuMIn) #this package allows us to obtain the R2 of our models, R2m (Marginal) R2 > fixed effects, R2c (Conditional) > whole model
+library(dplyr)
+
+regdf <- read.table("IGE_EA_regression_df", header=T) #n=2361
+
+#Model 0 is to understand the variance that is being accounted for by the covariates 
+Model0 <- lm(EA~C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20+AGE+SEX, data=regdf)
+
+#only including results of AGE and SEX as this information is easy to understand and important
+results_0 <- as.data.frame(cbind(coef(summary(Model0))[c(1,22:23),], summary(Model0)$adj.r.squared))
+results_0$Model <- "Model0"
+
+ModelA <- lm(EA~C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20+AGE+SEX+eaPRS_0.05, data=regdf)
+results_A <- as.data.frame(cbind(coef(summary(ModelA))[c(1,24),], summary(ModelA)$adj.r.squared))
+results_A$Model <- "ModelA"
+
+ModelB <- lm(EA~C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20+AGE+SEX+eaPRS_0.05+meaPRS_0.05+peaPRS_0.05, data=regdf)   
+results_B <- as.data.frame(cbind(coef(summary(ModelB))[c(1,24:26),], summary(ModelB)$adj.r.squared))
+results_B$Model <- "ModelB"
+  
+ModelC <- lm(EA~C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20+AGE+SEX+eaPRS_0.05+mEA_res+pEA_res, data=regdf)   
+results_C <- as.data.frame(cbind(coef(summary(ModelC))[c(1,24:26),], summary(ModelC)$adj.r.squared))
+results_C$Model <- "ModelC"
+
+ModelD <- lm(EA~C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20+AGE+SEX+eaPRS_0.05+meaPRS_0.05+peaPRS_0.05+mEA_res+pEA_res, data=regdf)   
+results_D <- as.data.frame(cbind(coef(summary(ModelD))[c(1,24:28),], summary(ModelD)$adj.r.squared))
+results_D$Model <- "ModelD"
+
+results <- bind_rows(results_0, results_A, results_B, results_C, results_D)
+write.csv(results, "eaPRS_0.05_reg_mixed_models_nosib.csv", row.names=T, quote=F)
+
+avb <- as.data.frame(anova(ModelA, ModelB))
+avb$comparison <- "A_v_B"
+
+avc <- as.data.frame(anova(ModelA, ModelC))
+avc$comparison <- "A_v_C"
+
+avd <- as.data.frame(anova(ModelA, ModelD))
+avd$comparison <- "A_v_D"
 
 bvd <- as.data.frame(anova(ModelB, ModelD))
 bvd$comparison <- "B_v_D"
@@ -990,10 +1045,9 @@ bvd$comparison <- "B_v_D"
 cvd <- as.data.frame(anova(ModelC, ModelD))
 cvd$comparison <- "C_v_D"
 
-results <- bind_rows(avb, avc, avd, bvc, bvd, cvd)
-results[8,8] <- NA
-results$fdr <- p.adjust(results$`Pr(>Chisq)`, method="fdr", n=length(results$`Pr(>Chisq)`))
-write.csv(results, "eaPRS_0.05_reg_mixed_model_comparison_MALE.csv", row.names=T, quote=F)
+results <- bind_rows(avb, avc, avd, bvd, cvd)
+results$fdr <- p.adjust(results$`Pr(>F)`, method="fdr", n=length(results$`Pr(>F)`))
+write.csv(results, "eaPRS_0.05_reg_mixed_model_comparison_nosib.csv", row.names=T, quote=F)
 
 ```
 
@@ -1004,17 +1058,14 @@ Pathway analyses can model the relationships between the IVs unlike regression m
 We will explore 3 different pathway models  
 
 Simple model  
-![.](./EducationResults/Slide5.PNG)
-
-Extended (Restricted) model   
-![.](./EducationResults/Slide6.PNG)
-
 Extended model  
-![.](./EducationResults/Slide7.PNG)
+![](./IGE_Results/Slide11.PNG)  
+Results can be found in supplementary Table 4.  
+![](./IGE_Results/Slide10.PNG)
 
-## Path a,d Restricted  
+## Path h,i Restricted  
 
-Pathway analyses need to be run with SEs bootstrapped. We will also fix pathways a and d to 0.5 as the effect of parental PRS on offspring PRS should be 0.5 as each parent passes on 50% of their genome to the offspring. This will also mean we more degrees of freedom which impacts the analysis power to avoid type 1 and type 2 errors.  
+Pathway analyses need to be run with SEs bootstrapped. We will also fix pathways h and i to 0.5 as the effect of parental PGS on offspring PGS should be 0.5 as each parent passes on 50% of their genome to the offspring. This will also mean we more degrees of freedom which impacts the analysis power to avoid type 1 and type 2 errors.  
 
 Note that parent phenotypes are pre-corrected for their own 20 principle components from a GRM of Generation Scotland. The phenotype was not pre-corrected for AGE, instead, this was included in the statistical model as this could provide useful information without making the results difficult to read.  
 
@@ -1057,14 +1108,14 @@ meaPRS_0.05 ~~ peaPRS_0.05
 '
 
 # Fit the model
-fitM <- sem(model, data=data, se="bootstrap", estimator='ML')
+fitM <- sem(model, data=data, estimator='ML')
 
 sem_model <- summary(fitM, standardized=TRUE, fit.measures=TRUE, ci=TRUE)
 sem_model_df <- as.data.frame(sem_model$PE)
 sem_model_final <- sem_model_df[sem_model_df$label != "", c(1:4,6:7,9:11)] #here we are extracting values of interest e.g. est, se, p, ci
 simple_model <- cbind(sem_model_final, AIC(fitM))
 
-write.csv(simple_model, "eaPRS_0.05_pa_m1_bs.csv", row.names=F, quote=F)
+write.csv(simple_model, "eaPRS_0.05_pa_m1.csv", row.names=F, quote=F)
 
 ################
 #EXTENDED MODEL#
@@ -1113,23 +1164,17 @@ mEA_res ~~ pEA_res
 '
 
 # Fit the model
-fitM <- sem(model, data=data, se="bootstrap", estimator='ML')
+fitM <- sem(model, data=data, estimator='ML')
 sem_model <- summary(fitM, standardized=TRUE, fit.measures=TRUE, ci=TRUE)
 sem_model_df <- as.data.frame(sem_model$PE)
 sem_model_final <- sem_model_df[sem_model_df$label != "", c(1:4,6:7,9:11)] #here we are extracting values of interest e.g. est, se, p, ci
 extended_model <- cbind(sem_model_final, AIC(fitM))
 
-write.csv(extended_model, "eaPRS_0.05_pa_m2_bs.csv", row.names=F, quote=F)
+write.csv(extended_model, "eaPRS_0.05_pa_m2.csv", row.names=F, quote=F)
 
 ```
 
-![.](./EducationResults/Slide8.PNG)
-
 ## Paths Freely Estimated  
-
-Results for subsequent sanity check analyses can be found in the supplementary materials  
-  
-For a sanity check, the pathway models will be implemented where all paths are freely estimated. We are interested, particularly, in paths a and d, are the free estimations in line with what we expect ~0.5?  
 
 ```{r, eval=FALSE}
 
@@ -1153,8 +1198,8 @@ EA ~ c*meaPRS_0.05
 EA ~ b*peaPRS_0.05             
 
 # mediator
-eaPRS_0.05 ~ 0.5*meaPRS_0.05
-eaPRS_0.05 ~ 0.5*peaPRS_0.05
+eaPRS_0.05 ~ i*meaPRS_0.05
+eaPRS_0.05 ~ h*peaPRS_0.05
 EA ~ a*eaPRS_0.05
 
 # indirect effects (i*a, h*a)
@@ -1170,7 +1215,7 @@ meaPRS_0.05 ~~ peaPRS_0.05
 '
 
 # Fit the model
-fitM <- sem(model, data=data, se="bootstrap", estimator='ML')
+fitM <- sem(model, data=data, estimator='ML')
 
 sem_model <- summary(fitM, standardized=TRUE, fit.measures=TRUE, ci=TRUE)
 sem_model_df <- as.data.frame(sem_model$PE)
@@ -1178,7 +1223,7 @@ sem_model_final <- sem_model_df[sem_model_df$label != "", c(1:4,6:7,9:11)] #here
 simple_model <- cbind(sem_model_final, AIC(fitM))
 
 
-write.csv(simple_model, "eaPRS_0.05_pa_m1_bs_fm.csv", row.names=F, quote=F)
+write.csv(simple_model, "eaPRS_0.05_pa_m1_fm.csv", row.names=F, quote=F)
 
 ################
 #EXTENDED MODEL#
@@ -1227,13 +1272,120 @@ mEA_res ~~ pEA_res
 '
 
 # Fit the model
-fitM <- sem(model, data=data, se="bootstrap", estimator='ML')
+fitM <- sem(model, data=data, estimator='ML')
 sem_model <- summary(fitM, standardized=TRUE, fit.measures=TRUE, ci=TRUE)
 sem_model_df <- as.data.frame(sem_model$PE)
 sem_model_final <- sem_model_df[sem_model_df$label != "", c(1:4,6:7,9:11)] #here we are extracting values of interest e.g. est, se, p, ci
 extended_model <- cbind(sem_model_final, AIC(fitM))
 
-write.csv(extended_model, "eaPRS_0.05_pa_m2_bs_fm.csv", row.names=F, quote=F)
+write.csv(extended_model, "eaPRS_0.05_pa_m2_fm.csv", row.names=F, quote=F)
+
+```
+
+## Parent PGS Covariance  
+
+Here we are NOT controlling for parent PGS covariance
+
+```{r, eval=FALSE}
+
+rm(list=ls())
+library(lavaan)
+
+data <- read.table("IGE_ea_pathway_df", header=T)
+data <- data[complete.cases(data),] #n=2361
+
+##############
+#SIMPLE MODEL#
+##############
+
+# Define model
+
+model <- ' 
+
+# direct effects
+EA ~ AGE+SEX+C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20
+EA ~ c*meaPRS_0.05
+EA ~ b*peaPRS_0.05             
+
+# mediator
+eaPRS_0.05 ~ i*meaPRS_0.05
+eaPRS_0.05 ~ h*peaPRS_0.05
+EA ~ a*eaPRS_0.05
+
+# indirect effects (i*a, h*a)
+ia := i*a
+ha := h*a
+
+# total effects 
+total_mum := c + (i*a)
+total_dad := b + (h*a)
+
+# covariance
+'
+
+# Fit the model
+fitM <- sem(model, data=data, estimator='ML')
+
+sem_model <- summary(fitM, standardized=TRUE, fit.measures=TRUE, ci=TRUE)
+sem_model_df <- as.data.frame(sem_model$PE)
+sem_model_final <- sem_model_df[sem_model_df$label != "", c(1:4,6:7,9:11)] #here we are extracting values of interest e.g. est, se, p, ci
+simple_model <- cbind(sem_model_final, AIC(fitM))
+
+
+write.csv(simple_model, "eaPRS_0.05_pa_m1_parentPGScov_notcontrolled_.csv", row.names=F, quote=F)
+
+################
+#EXTENDED MODEL#
+################
+
+rm(list=ls())
+data <- read.table("IGE_ea_pathway_df", header=T)
+data <- data[complete.cases(data),] #n=2361
+
+# Define model
+
+model <- '
+
+#direct effects
+EA ~ AGE+SEX+C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20
+EA ~ c*meaPRS_0.05
+EA ~ b*peaPRS_0.05         
+
+#mediator
+eaPRS_0.05 ~ i*meaPRS_0.05
+eaPRS_0.05 ~ h*peaPRS_0.05 
+
+EA ~ a*eaPRS_0.05
+
+pEA_res ~ d*peaPRS_0.05+pAGE
+mEA_res ~ e*meaPRS_0.05+mAGE
+
+EA ~ f*pEA_res
+EA ~ g*mEA_res
+
+# indirect effects (i*a, h*a)
+ia := i*a
+ha := h*a
+df := d*f
+eg := e*g
+
+
+# total effects 
+total_mum := c + (i*a) + (e*g) 
+total_dad := b + (h*a) + (d*f) 
+
+# covariance
+
+'
+
+# Fit the model
+fitM <- sem(model, data=data, estimator='ML')
+sem_model <- summary(fitM, standardized=TRUE, fit.measures=TRUE, ci=TRUE)
+sem_model_df <- as.data.frame(sem_model$PE)
+sem_model_final <- sem_model_df[sem_model_df$label != "", c(1:4,6:7,9:11)] #here we are extracting values of interest e.g. est, se, p, ci
+extended_model <- cbind(sem_model_final, AIC(fitM))
+
+write.csv(extended_model, "eaPRS_0.05_pa_m2_parentPGScov_notcontrolled.csv", row.names=F, quote=F)
 
 ```
 
@@ -1278,14 +1430,14 @@ meaPRS_0.05 ~~ peaPRS_0.05
 '
 
 # Fit the model
-fitM <- sem(model, data=data, se="bootstrap", estimator='ML')
+fitM <- sem(model, data=data, estimator='ML')
 
 sem_model <- summary(fitM, standardized=TRUE, fit.measures=TRUE, ci=TRUE)
 sem_model_df <- as.data.frame(sem_model$PE)
 sem_model_final <- sem_model_df[sem_model_df$label != "", c(1:4,6:7,9:11)] #here we are extracting values of interest e.g. est, se, p, ci
 simple_model <- cbind(sem_model_final, AIC(fitM))
 
-write.csv(simple_model, "eaPRS_0.05_pa_m1_bs_FEMALE.csv", row.names=F, quote=F)
+write.csv(simple_model, "eaPRS_0.05_pa_m1_FEMALE.csv", row.names=F, quote=F)
 
 ################
 #EXTENDED MODEL#
@@ -1335,13 +1487,13 @@ mEA_res ~~ pEA_res
 '
 
 # Fit the model
-fitM <- sem(model, data=data, se="bootstrap", estimator='ML')
+fitM <- sem(model, data=data, estimator='ML')
 sem_model <- summary(fitM, standardized=TRUE, fit.measures=TRUE, ci=TRUE)
 sem_model_df <- as.data.frame(sem_model$PE)
 sem_model_final <- sem_model_df[sem_model_df$label != "", c(1:4,6:7,9:11)] #here we are extracting values of interest e.g. est, se, p, ci
 extended_model <- cbind(sem_model_final, AIC(fitM))
 
-write.csv(extended_model, "eaPRS_0.05_pa_m2_bs_FEMALE.csv", row.names=F, quote=F)
+write.csv(extended_model, "eaPRS_0.05_pa_m2_FEMALE.csv", row.names=F, quote=F)
 
 
 ```
@@ -1388,14 +1540,14 @@ meaPRS_0.05 ~~ peaPRS_0.05
 '
 
 # Fit the model
-fitM <- sem(model, data=data, se="bootstrap", estimator='ML')
+fitM <- sem(model, data=data, estimator='ML')
 
 sem_model <- summary(fitM, standardized=TRUE, fit.measures=TRUE, ci=TRUE)
 sem_model_df <- as.data.frame(sem_model$PE)
 sem_model_final <- sem_model_df[sem_model_df$label != "", c(1:4,6:7,9:11)] #here we are extracting values of interest e.g. est, se, p, ci
 simple_model <- cbind(sem_model_final, AIC(fitM))
 
-write.csv(simple_model, "eaPRS_0.05_pa_m1_bs_MALE.csv", row.names=F, quote=F)
+write.csv(simple_model, "eaPRS_0.05_pa_m1_MALE.csv", row.names=F, quote=F)
 
 ################
 #EXTENDED MODEL#
@@ -1445,13 +1597,13 @@ mEA_res ~~ pEA_res
 '
 
 # Fit the model
-fitM <- sem(model, data=data, se="bootstrap", estimator='ML')
+fitM <- sem(model, data=data, estimator='ML')
 sem_model <- summary(fitM, standardized=TRUE, fit.measures=TRUE, ci=TRUE)
 sem_model_df <- as.data.frame(sem_model$PE)
 sem_model_final <- sem_model_df[sem_model_df$label != "", c(1:4,6:7,9:11)] #here we are extracting values of interest e.g. est, se, p, ci
 extended_model <- cbind(sem_model_final, AIC(fitM))
 
-write.csv(extended_model, "eaPRS_0.05_pa_m2_bs_MALE.csv", row.names=F, quote=F)
+write.csv(extended_model, "eaPRS_0.05_pa_m2_MALE.csv", row.names=F, quote=F)
 
 
 
@@ -1502,14 +1654,14 @@ meaPRS_0.05 ~~ peaPRS_0.05
 '
 
 # Fit the model
-fitM <- sem(model, data=data, se="bootstrap", estimator='ML')
+fitM <- sem(model, data=data, estimator='ML')
 
 sem_model <- summary(fitM, standardized=TRUE, fit.measures=TRUE, ci=TRUE)
 sem_model_df <- as.data.frame(sem_model$PE)
 sem_model_final <- sem_model_df[sem_model_df$label != "", c(1:4,6:7,9:11)] #here we are extracting values of interest e.g. est, se, p, ci
 simple_model <- cbind(sem_model_final, AIC(fitM))
 
-write.csv(simple_model, "eaPRS_0.05_pa_m1_bs_nosib.csv", row.names=F, quote=F)
+write.csv(simple_model, "eaPRS_0.05_pa_m1_nosib.csv", row.names=F, quote=F)
 
 ################
 #EXTENDED MODEL#
@@ -1562,13 +1714,13 @@ mEA_res ~~ pEA_res
 '
 
 # Fit the model
-fitM <- sem(model, data=data, se="bootstrap", estimator='ML')
+fitM <- sem(model, data=data, estimator='ML')
 sem_model <- summary(fitM, standardized=TRUE, fit.measures=TRUE, ci=TRUE)
 sem_model_df <- as.data.frame(sem_model$PE)
 sem_model_final <- sem_model_df[sem_model_df$label != "", c(1:4,6:7,9:11)] #here we are extracting values of interest e.g. est, se, p, ci
 extended_model <- cbind(sem_model_final, AIC(fitM))
 
-write.csv(extended_model, "eaPRS_0.05_pa_m2_bs_nosib.csv", row.names=F, quote=F)
+write.csv(extended_model, "eaPRS_0.05_pa_m2_nosib.csv", row.names=F, quote=F)
 
 
 ```
@@ -1608,14 +1760,14 @@ total_mum := c + (0.5*a)
 '
 
 # Fit the model
-fitM <- sem(model, data=data, se="bootstrap", estimator='ML')
+fitM <- sem(model, data=data, estimator='ML')
 
 sem_model <- summary(fitM, standardized=TRUE, fit.measures=TRUE, ci=TRUE)
 sem_model_df <- as.data.frame(sem_model$PE)
 sem_model_final <- sem_model_df[sem_model_df$label != "", c(1:4,6:7,9:11)] #here we are extracting values of interest e.g. est, se, p, ci
 simple_model <- cbind(sem_model_final, AIC(fitM))
 
-write.csv(simple_model, "eaPRS_0.05_pa_m1_bs_matduo.csv", row.names=F, quote=F)
+write.csv(simple_model, "eaPRS_0.05_pa_m1_matduo.csv", row.names=F, quote=F)
 
 ################
 #EXTENDED MODEL#
@@ -1652,13 +1804,13 @@ total_mum := c + (0.5*a) + (e*g)
 '
 
 # Fit the model
-fitM <- sem(model, data=data, se="bootstrap", estimator='ML')
+fitM <- sem(model, data=data, estimator='ML')
 sem_model <- summary(fitM, standardized=TRUE, fit.measures=TRUE, ci=TRUE)
 sem_model_df <- as.data.frame(sem_model$PE)
 sem_model_final <- sem_model_df[sem_model_df$label != "", c(1:4,6:7,9:11)] #here we are extracting values of interest e.g. est, se, p, ci
 extended_model <- cbind(sem_model_final, AIC(fitM))
 
-write.csv(extended_model, "eaPRS_0.05_pa_m2_bs_matduo.csv", row.names=F, quote=F)
+write.csv(extended_model, "eaPRS_0.05_pa_m2_matduo.csv", row.names=F, quote=F)
 
 
 ```
@@ -1698,14 +1850,14 @@ total_dad := b + (0.5*a)
 '
 
 # Fit the model
-fitM <- sem(model, data=data, se="bootstrap", estimator='ML')
+fitM <- sem(model, data=data, estimator='ML')
 
 sem_model <- summary(fitM, standardized=TRUE, fit.measures=TRUE, ci=TRUE)
 sem_model_df <- as.data.frame(sem_model$PE)
 sem_model_final <- sem_model_df[sem_model_df$label != "", c(1:4,6:7,9:11)] #here we are extracting values of interest e.g. est, se, p, ci
 simple_model <- cbind(sem_model_final, AIC(fitM))
 
-write.csv(simple_model, "eaPRS_0.05_pa_m1_bs_patduo.csv", row.names=F, quote=F)
+write.csv(simple_model, "eaPRS_0.05_pa_m1_patduo.csv", row.names=F, quote=F)
 
 ################
 #EXTENDED MODEL#
@@ -1738,17 +1890,17 @@ df := d*f
 
 
 # total effects 
-total_dad := b + (0.5*a) + (d*f) ###### THIS IS WHAT I HAVE ADDED - NOT SURE IF ITS RIGHT THO #####
+total_dad := b + (0.5*a) + (d*f) 
 
 '
 
 # Fit the model
-fitM <- sem(model, data=data, se="bootstrap", estimator='ML')
+fitM <- sem(model, data=data, estimator='ML')
 sem_model <- summary(fitM, standardized=TRUE, fit.measures=TRUE, ci=TRUE)
 sem_model_df <- as.data.frame(sem_model$PE)
 sem_model_final <- sem_model_df[sem_model_df$label != "", c(1:4,6:7,9:11)] #here we are extracting values of interest e.g. est, se, p, ci
 extended_model <- cbind(sem_model_final, AIC(fitM))
 
-write.csv(extended_model, "eaPRS_0.05_pa_m2_bs_patduo.csv", row.names=F, quote=F)
+write.csv(extended_model, "eaPRS_0.05_pa_m2_patduo.csv", row.names=F, quote=F)
 
 ```
