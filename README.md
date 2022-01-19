@@ -293,7 +293,13 @@ What we observe is that offspring pheno ~ parental phenotype path (*f* and *g*) 
 Here we present results for paternal genetic nurturing paths from pathway models.
 The same pattern of results is observed from regression models and maternal genetic nurturing pathway models as well!
 
-First, we present results when PGSs include 0 noise (a.k.a a scenario where the GWAS is well powered and SNP effect sizes are accurate).
-![Simulation Analysis Results](Simulations_PA_Figures_manuscript/paternal_rGE_pa_combined_manuscript.PNG)
+Presented are results when PGSs include 0 noise (a.k.a a scenario where the GWAS is well powered and SNP effect sizes are accurate).
+![Simulation Analysis Results](Simulations_PA_Figures_manuscript/paternal_rGE_pa_combined_manuscript.png)  
 
+Presented are results which include varying levels of noise associated with the PGSs.
+![Simulation Analysis Results](Simulations_PA_Figures_chapter/paternal_rGE_pa_combined_chapter.png)  
+
+It is evident that **just** including trio PGSs within these models allow for an accurate (unbiased) quantification of genetic nurturing effects (as simulations did NOT include genetic nurturing effects, the coefficients were expected to be ~0, and figures show that!). 
+
+However, **including** parental phenotypes to explore mechanisms of genetic nurturing results in downward and upward biases. These biases diminish when PGSs account for 100% of the genetic variance and are entirely accurate. This highlights that biased are a result of confouding induced by underpowered PGSs.
 
