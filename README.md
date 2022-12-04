@@ -23,7 +23,7 @@ In contrast **educational attainment** is a trait that has higher heritability a
 
 We also explore **height** as this is a highly heritable trait ~80% with GWAS that is well powered. The resulting PGSs account for much more variance than seen in EA and depression. Furthermore, based on the existing literature, it seems that genetic nurturing effects within height are negligible. 
 
-More information and scripts on quality control and cleaning of phenotypes can be found in RealDataAnalyses.R R scripts.  
+More information and scripts on quality control and cleaning of phenotypes can be found in IGE_real_data_analyses.Rmd R scripts.  
 ![Phenotype Demographics](pheno_demographics.PNG)
 
 # Polygenic Scores
