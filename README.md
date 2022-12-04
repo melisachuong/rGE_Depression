@@ -5,7 +5,7 @@
 Here we are exploring genetic nurturing effects using Generation Scotland Trios (biological parent-offspring members) using Polygenic Scores (PGS).
 
 This figure from Kong and colleagues (2018) provides a neat visualisation of genetic nurturing effects. The figure essentially shows that parent genetics can shape offspring's rearing environment. Parental genetics are made up of genes that they *transmit* and that they do *not transmit*. The transmitted genes can have a *direct* effect by forming the offspring's own genome, which goes on to impact a trait of interest. Both the transmitted and non-transmitted genes can have *genetic nurturing* effect on the offspring, by influencing a parental trait which can go on to shape the offspring's rearing environment.  
-![Trio Genetic Nurturing](F1.large.jpg)
+![Trio Genetic Nurturing](IGE_Figures/Slide1.PNG)
 
 It is important to understand and quanitify genetic nurturing effects at play. The translational aspect of this research would be identifying the mediating factors through which these genetic nurturing effects have an impact (e.g. the parental traits *Yp/Ym* shown in the figure above). Identifying the mechanism can provide clear targets for interventions aimed at individuals with heightened risk. 
 
@@ -24,7 +24,7 @@ In contrast **educational attainment** is a trait that has higher heritability a
 We also explore **height** as this is a highly heritable trait ~80% with GWAS that is well powered. The resulting PGSs account for much more variance than seen in EA and depression. Furthermore, based on the existing literature, it seems that genetic nurturing effects within height are negligible. 
 
 More information and scripts on quality control and cleaning of phenotypes can be found in RealDataAnalyses.R R scripts.  
-![Phenotype Demographics](IGE_Results/Slide1.PNG)
+![Phenotype Demographics](pheno_demographics.PNG)
 
 # Polygenic Scores
 
@@ -88,8 +88,7 @@ Rscript PRSice.R\
 --pheno-col <PHENO COL NAME>\ 
 --out <INSERT OUTPUT NAME>
 
-```
-![Polygenic Score Demographics](IGE_Results/Slide2.PNG)  
+``` 
 
 # Statistical Analyses & Software Packages
 
@@ -125,7 +124,7 @@ Model *II* represents direct and indirect genetic effects (the inclusion of the 
 
 Results show that model *II* is has a significantly better fit to the data for Educational Attainment only. This suggests that there is no evidence of genetic nurturing that can be picked up using PGSs in the other traits of interest.
 
-![Regression Model Comparisons](IGE_Results/Slide9.PNG)
+![Regression Model Comparisons](log_likelihood.PNG)
 
 **Pathway Models**
 
@@ -147,7 +146,7 @@ These results are difficult to interpret and point to potential confounding and 
 
 More discussion on results can be found in the manuscript.
 
-![Pathway Model Results](IGE_Results/Slide10.PNG)
+![Pathway Model Results](pathway_model_results.PNG)
 
 # Simulation Analyses
 
