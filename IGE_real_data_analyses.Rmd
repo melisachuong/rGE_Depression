@@ -1,0 +1,3829 @@
+---
+title: "Genetic Nurturing Effects"
+author: "Melisa Chuong"
+date: "17/09/2022"
+output: 
+  html_document:
+    code_folding: hide
+---
+
+# Motivation
+# Generation Scotland Trios  
+
+Genotyped data and pedigree files can be found on datastore @/exports/igmm/eddie/GenScotDepression/data/genscot/genetics/genotypes/GS20K_PLINK_files/QCd_data   
+*These files are saved as GS_QC.bed/.bim/.fam*  
+
+```{r, eval=FALSE}
+rm(list=ls())
+
+fam <- read.table("GS_QC.fam") #this file was renamed for convenience 
+colnames(fam) <- c("FID", "IID", "PID", "MID", "SEX", "PHENO")
+
+fatherpresent <- fam[fam$PID%in%fam$IID,] #Finding PIDs also present in the IID column - every individual in the IID column in the pedigree file has genotyped data#
+dim(fatherpresent) #fatherduo n= 3,865
+
+motherpresent <- fam[fam$MID%in%fam$IID,] #Finding MIDs also present in the IID column#
+dim(motherpresent) #motherduo n=5,954
+
+trio <- fam[fam$PID%in%fam$IID & fam$MID%in%fam$IID,] #Finding trios, i.e. individuals with both PIDs and MIDs present in the IID column#
+
+write.table(trio, "GS_trio", row.names=F, quote=F)
+#n= 2680 genotyped trios available in Generation Scotland
+```
+
+# Phenotypes {.tabset}  
+
+## Height  
+
+Raw Phenotype  
+
+```{r, eval=FALSE}
+
+rm(list=ls())
+
+df <- load("masterDB.Rdata")
+which(colnames(totaldata)=="height")
+
+#column IID =1, FID =79, HEIGHT=34
+height <- totaldata[,c(1,34,79)]
+
+#Reordering so column order is FID, IID, HEIGHT
+height <- height[,c(3,1,2)] #n=24,075
+height <- height[complete.cases(height),] #n=21,450
+colnames(height) <- c("FID", "IID", "HEIGHT")
+
+write.table(height, "GSheight", row.names=F, quote=F)
+```
+
+Quality Controlled Phenotype  
+
+```{r, eval=FALSE}
+age <- read.table("GS_Ages.qcovar", header=T)
+age <- age[,1:3]
+colnames(age) <- c("FID", "IID", "AGE")
+
+sex <- read.table("GS_SexClinic.fcovar", header=T)
+sex <- sex[,1:3]
+colnames(sex) <- c("FID", "IID", "SEX")
+
+cov <- merge(age, sex, by=c("FID", "IID"))
+
+colnames(height) <- c("FID", "IID", "HEIGHT")
+
+df1 <- merge(height, cov, by=c("FID", "IID")) #n=20,026
+
+#We need to remove individuals with NA data
+df1 <- df1[!is.na(df1$HEIGHT),] #n=19,961
+
+#Regressing out the effects of AGE and SEX - because we want to remove outliers after controlling for age and sex covariates
+reg <- lm(HEIGHT~AGE+SEX, data=df1)
+res <- data.frame(FID=df1$FID, IID=df1$IID, HEI_res=residuals(reg))
+
+summary(res$HEI_res)
+sd(res$HEI_res)
+
+outlierIDs_positive <- subset(res, res$HEI_res>mean(res$HEI_res)+4*sd(res$HEI_res))
+outlierIDs_negative <- subset(res, res$HEI_res<mean(res$HEI_res)-4*sd(res$HEI_res))
+
+outlierIDs <- rbind(outlierIDs_positive, outlierIDs_negative)#n=8
+
+#We only actually need the identity numbers of the outliers
+outlierIDs <- outlierIDs[,1:2]
+
+write.table(outlierIDs, "heightOUTLIERS", row.names=F, quote=F)
+
+#Now removing outliers from our height variable
+cleanheight <- height[!(height$IID%in%outlierIDs$IID),] #n=(21,450-8) 21,442
+write.table(cleanheight, "HEIGHT_outliers_removed", row.names = F, quote=F)
+
+trio <- read.table("GS_trio", header=T)
+df2 <- merge(trio, cleanheight, by=c("FID", "IID"), all.x=T)
+colnames(cleanheight)[2:3] <- c("MID", "mHEIGHT")
+df3 <- merge(df2, cleanheight, by=c("FID", "MID"), all.x=T)
+colnames(cleanheight)[2:3] <- c("PID", "pHEIGHT")
+df4 <- merge(df3, cleanheight, by=c("FID", "PID"), all.x=T)
+
+```
+
+Phenotype Demographics  
+
+```{r, eval=FALSE}
+df4 <- df4[complete.cases(df4),]
+pheno_info <- c()
+
+for(column in c('HEIGHT', 'mHEIGHT', 'pHEIGHT')){
+  min_pheno <- min(df4[column])
+  max_pheno <- max(df4[column])
+  mean_pheno <- sum(df4[column])/dim(df4)[1]
+  height_info <- Reduce(function(x,y) cbind(x=x, y=y), list(column, min_pheno, mean_pheno, max_pheno, dim(df4)[1]))
+  pheno_info <- rbind(pheno_info, height_info)
+}
+
+```
+
+## Educational Attainment  
+
+Raw Phenotype  
+
+```{r, eval=FALSE}
+
+df <- load("masterDB.Rdata")
+which(colnames(totaldata)=="years_category")
+
+ea <- totaldata[,c(1,41,79)]
+ea <- ea[,c(3,1,2)]
+
+colnames(ea) <- c("FID", "IID", "EA")
+
+write.table(ea, "GSea", row.names=F, quote=F)
+
+```
+
+Quality Controlled Phenotype  
+
+```{r, eval=FALSE}
+
+age <- read.table("GS_Ages.qcovar", header=T)
+age <- age[,1:3]
+colnames(age) <- c("FID", "IID", "AGE")
+
+sex <- read.table("GS_SexClinic.fcovar", header=T)
+sex <- sex[,1:3]
+colnames(sex) <- c("FID", "IID", "SEX")
+
+cov <- merge(age, sex, by=c("FID", "IID"))
+
+df1 <- merge(ea, cov, by=c("FID", "IID")) #n=20,026
+
+#We need to remove individuals with NA data
+df1 <- df1[complete.cases(df1),] #n=18,921
+
+#Regressing out the effects of AGE and SEX
+reg <- lm(EA~AGE+SEX, data=df1)
+res <- data.frame(FID=df1$FID, IID=df1$IID, EA_res=residuals(reg))
+
+summary(res$EA_res)
+sd(res$EA_res)
+
+outlierIDs_positive <- subset(res, res$EA_res>mean(res$EA_res)+4*sd(res$EA_res))
+outlierIDs_negative <- subset(res, res$EA_res<mean(res$EA_res)-4*sd(res$EA_res))
+
+#No outliers! 
+cleanea <- ea
+write.table(cleanea, "EA_outliers_removed", row.names = F, quote = F)
+
+trio <- read.table("GS_trio", header=T)
+df2 <- merge(trio, cleanea, by=c("FID", "IID"), all.x=T)
+colnames(cleanea)[2:3] <- c("MID", "mEA")
+df3 <- merge(df2, cleanea, by=c("FID", "MID"), all.x=T)
+colnames(cleanea)[2:3] <- c("PID", "pEA")
+df4 <- merge(df3, cleanea, by=c("FID", "PID"), all.x=T)
+
+```
+
+Phenotype Demographics  
+
+```{r, eval=FALSE}
+df4 <- df4[complete.cases(df4),]
+
+for(column in c('EA', 'mEA', 'pEA')){
+  min_pheno <- min(df4[column])
+  max_pheno <- max(df4[column])
+  mean_pheno <- sum(df4[column])/dim(df4)[1]
+  ea_info <- Reduce(function(x,y) cbind(x=x, y=y), list(column, min_pheno, mean_pheno, max_pheno, dim(df4)[1]))
+  pheno_info <- rbind(pheno_info, ea_info)
+}
+
+```
+
+## Psychological Distress  
+
+Raw Phenotype  
+
+```{r, eval=FALSE}
+
+ghq <- read.csv("GS_All_GHQ.csv")
+which(colnames(ghq)=="GHQTotal")
+ghqt <- ghq[,c(1,30)] #19,759
+
+colnames(ghqt)[1] <- c("IID")
+ghqt <- ghqt[complete.cases(ghqt),] #n=19,695
+
+write.table(ghqt, "GHQ_tot", row.names=F, quote=F)
+
+```
+
+Quality Controlled Phenotype  
+
+```{r, eval=FALSE}
+age <- read.table("GS_Ages.qcovar", header=T)
+age <- age[,1:3]
+colnames(age) <- c("FID", "IID", "AGE")
+
+sex <- read.table("GS_SexClinic.fcovar", header=T)
+sex <- sex[,1:3]
+colnames(sex) <- c("FID", "IID", "SEX")
+
+cov <- merge(age, sex, by=c("FID", "IID")) #n=20,032
+
+df1 <- merge(ghqt, cov, by="IID") #n=18,264
+
+#We need to remove individuals with NA data
+df1 <- df1[!is.na(df1$GHQTotal),] #n=18,624
+
+#Regressing out the effects of AGE and SEX
+reg <- lm(GHQTotal~AGE+SEX, data=df1)
+res <- data.frame(IID=df1$IID, GHQT_res=residuals(reg))
+
+summary(res$GHQT_res)
+sd(res$GHQT_res)
+
+outlierIDs_positive <- subset(res, res$GHQT_res>mean(res$GHQT_res)+4*sd(res$GHQT_res))
+outlierIDs_negative <- subset(res, res$GHQT_res<mean(res$GHQT_res)-4*sd(res$GHQT_res))
+
+outlierIDs <- rbind(outlierIDs_positive, outlierIDs_negative) #n=157
+
+#We only actually need the identity numbers of the outliers
+outlierIDs <- outlierIDs[,1:2]
+
+write.table(outlierIDs, "ghqtOUTLIERS", row.names=F, quote=F)
+
+#Now removing outliers from our GHQT variable
+clean_ghqt <- ghqt[!(ghqt$IID%in%outlierIDs$IID),] #n=(19,695-157) 19,538
+write.table(clean_ghqt, "GHQTotal_outliers_removed")
+
+trio <- read.table("GS_trio", header=T)
+df2 <- merge(trio, clean_ghqt, by="IID", all.x=T)
+colnames(clean_ghqt) <- c("MID", "m_ghqt")
+df3 <- merge(df2, clean_ghqt, by="MID", all.x=T)
+colnames(clean_ghqt) <- c("PID", "p_ghqt")
+df4 <- merge(df3, clean_ghqt, by="PID", all.x=T)
+
+```
+
+Phenotype Demographics  
+
+```{r, eval=FALSE}
+df4 <- df4[complete.cases(df4),]
+
+for(column in c('GHQTotal', 'm_ghqt', 'p_ghqt')){
+  min_pheno <- min(df4[column])
+  max_pheno <- max(df4[column])
+  mean_pheno <- sum(df4[column])/dim(df4)[1]
+  ghqt_info <- Reduce(function(x,y) cbind(x=x, y=y), list(column, min_pheno, mean_pheno, max_pheno, dim(df4)[1]))
+  pheno_info <- rbind(pheno_info, ghqt_info)
+}
+
+```
+
+## Depression  
+
+Raw Phenotype  
+
+```{r, eval=FALSE}
+which(colnames(ghq)=="GHQDepression")
+ghqd <- ghq[,c(1,34)] #19,759
+
+colnames(ghqd)[1] <- "IID"
+ghqd <- ghqd[complete.cases(ghqd),] #n=19,682
+
+write.table(ghqd, "GHQ_dep", row.names=F, quote=F)
+
+```
+
+Quality Controlled Phenotype  
+
+```{r, eval=FALSE}
+df1 <- merge(ghqd, cov, by="IID") #n=18,252
+
+#We need to remove individuals with NA data
+df1 <- df1[!is.na(df1$GHQDepression),] #n=18,252
+
+#Regressing out the effects of AGE and SEX
+reg <- lm(GHQDepression~AGE+SEX, data=df1)
+res <- data.frame(IID=df1$IID, GHQD_res=residuals(reg))
+
+summary(res$GHQD_res)
+sd(res$GHQD_res)
+
+outlierIDs_positive <- subset(res, res$GHQD_res>mean(res$GHQD_res)+4*sd(res$GHQD_res))
+outlierIDs_negative <- subset(res, res$GHQD_res<mean(res$GHQD_res)-4*sd(res$GHQD_res))
+
+outlierIDs <- rbind(outlierIDs_positive, outlierIDs_negative) #n=291
+
+#We only actually need the identity numbers of the outliers
+outlierIDs <- outlierIDs[,1:2]
+
+write.table(outlierIDs, "ghqdOUTLIERS", row.names=F, quote=F)
+
+#Now removing outliers from our GHQD variable
+clean_ghqd <- ghqd[!(ghqd$IID%in%outlierIDs$IID),] #n=(19,682-291) 19,391
+write.table(clean_ghqd, "GHQDepression_outliers_removed", row.names = F, quote = F)
+
+trio <- read.table("GS_trio", header=T)
+df2 <- merge(trio, clean_ghqd, by="IID", all.x=T)
+colnames(clean_ghqd) <- c("MID", "m_ghqd")
+df3 <- merge(df2, clean_ghqd, by="MID", all.x=T)
+colnames(clean_ghqd) <- c("PID", "p_ghqd")
+df4 <- merge(df3, clean_ghqd, by="PID", all.x=T)
+
+```
+
+Phenotype Demographics  
+
+```{r, eval=FALSE}
+df4 <- df4[complete.cases(df4),]
+
+for(column in c('GHQDepression', 'm_ghqd', 'p_ghqd')){
+  min_pheno <- min(df4[column])
+  max_pheno <- max(df4[column])
+  mean_pheno <- sum(df4[column])/dim(df4)[1]
+  ghqd_info <- Reduce(function(x,y) cbind(x=x, y=y), list(column, min_pheno, mean_pheno, max_pheno, dim(df4)[1]))
+  pheno_info <- rbind(pheno_info, ghqd_info)
+}
+write.csv(pheno_info, "pheno_demographics.csv", row.names = F, quote = F)
+
+```
+
+# Polygenic Risk Scores {.tabset}  
+
+PRSice2 (Choi & O'Reilly., 2019) is used to generate the PRSs.  
+Phenotypes will be corrected for covariates.  
+We will use 1000G as a reference panel for LD estimation which will go onto guide pruning and clumping of SNPs. 
+
+## Covariate Correction  
+
+Phenotypes are pre-corrected for 20 PCs, age and sex  
+
+```{r, eval=FALSE}
+
+library(dplyr)
+
+age <- read.table("GS_Ages.qcovar", header=T)
+age <- age[,c(1:3)] #2 columns with age measured in different formats, using the years (column)
+colnames(age) <- c("FID", "IID", "AGE")#n=20,032
+
+sex <- read.table("GS_SexClinic.fcovar", header=T)
+sex <- sex[,c(1:3)] #just using the sex info
+colnames(sex) <- c("FID", "IID", "SEX")
+sex$SEX <- as.factor(sex$SEX)#n=20,032
+
+pcs <- read.table("HM3mds.mds", header=T)
+pcs <- distinct(pcs, IID, .keep_all = TRUE) #Some IIDs are repeated, so need to sort this out#
+head(pcs)
+pcs <- pcs[,-3]#n=20,142
+
+cov <- merge(age, sex, by=c("FID","IID"))
+cov <- merge(cov, pcs, by=c("FID", "IID"))#n=19,990
+write.table(cov, "GScov", row.names=F, quote=F)
+
+# height 
+
+df1 <- merge(height, cov, by=c("FID","IID"))
+df1 <- df1[complete.cases(df1),]
+
+reg <- lm(HEIGHT~C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20+AGE+SEX, data=df1)
+summary(reg)
+result <- data.frame(FID=df1$FID, IID=df1$IID, HEI_res=residuals(reg))
+write.table(result, "GSheight_res", row.names=F, quote=F)
+
+# ea
+
+df1 <- merge(ea, cov, by=c("FID","IID"))
+df1 <- df1[complete.cases(df1),]
+
+res <- lm(EA~C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20+AGE+SEX, data=df1)
+summary(res)
+result <- data.frame(FID=df1$FID, IID=df1$IID, EA_res=residuals(res))
+write.table(result, "GSea_res", row.names=F, quote=F)he
+
+# psych distress  
+
+df1 <- merge(ghqt, cov, by="IID")
+df1 <- df1[complete.cases(df1),]
+
+res <- lm(GHQTotal~C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20+AGE+SEX, data=df1)
+result <- data.frame(FID=df1$FID, IID=df1$IID, GHQT_res=residuals(res))
+write.table(result, "GHQ_tot_res", row.names=F, quote=F)
+
+# depression 
+
+df1 <- merge(ghqd, cov, by="IID")
+df1 <- df1[complete.cases(df1),]
+
+res <- lm(GHQDepression~C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20+AGE+SEX, data=df1)
+result <- data.frame(FID=df$FID, IID=df$IID, GHQD_res=residuals(res))
+write.table(result, "GHQ_dep_res", row.names=F, quote=F)
+
+
+```
+
+## Polygenic Score Calculation  
+
+1000G files need to be in the format of plink1 files. Plink2 versions are available on datastore @ /exports/igmm/datastore/GenScotDepression/data/resources/1000g/PGEN
+
+Need to convert vzs plink2 versions of files to .bed\.bim\.fam plink1 versions
+plink2.00 is used for this 
+
+```
+plink --pfile all_phase3 --max-allele 2 --make-bed --out all_phase3
+
+```
+
+We will use:
+
+Base data:  
+Height GWAS meta-analysis sumstats  ~ Yengo et al., 2018: Wood et al., 2014 N= 253,288 individuals (NO GENSCOT) + UKB (Sample size of 693,529)  
+
+EA GWAS meta-analysis sumstats  ~ Lee et al., 2018 (removing 23&Me + GS data) N= 1,131,880-381,477 =750,403   
+
+Depression GWAS sumstats ~ Howard et al., 2019, 29 PGC cohorts and 23&Me data only (Sample size = 807,553, ncase=246,363, ncontrol=561,190)   
+
+LD data: 1000G LD structure (see above)  
+
+Phenotype data: The residualised phenotype files we created above. This is height, educational attainment, psychological distress, depression for all GS participants with the effects of age, sex and 20PCs removed  
+
+Target data: Will be the available plink files for GS; GS_QC.bed, GS_QC.bim, GS_QC.fam  
+
+We will be creating different PRSs whereby the number of SNPs used to inform the PRSs will be dependent on the SNPs p-value GWAS association with the trait. We use 10 different p-value association thresholds ranging from 5x10-8 : 1.
+
+Example Shell script
+
+```
+#!/bin/sh
+###########################################
+
+# M.Chuong, Edinburgh U.K, January2020
+# Eddie HEIGHT PRSice Script
+
+#$ -N GenScot{Height}PRS
+#$ -cwd
+#$ -pe sharedmem 2 # number of cores
+#$ -l h_vmem=40G # memory per core
+#$ -l h_rt=12:00:00 ## requested time
+#$ -m baes ## notifications: (b)begin/(a)aborted/(e)end/(s)suspended/(n)nomail
+#$ -M melisa.chuong@ed.ac.uk ## email for notifications
+
+# INITIALISE ENV MODULES
+. /etc/profile.d/modules.sh # if using modules need to add this line
+# LOAD THE MODULES
+module load igmm/apps/R/3.3.3
+
+
+Rscript PRSice.R\ 
+--dir .\ 
+--prsice ./PRSice_linux\
+--base {Meta-analysis_Wood_et_al+UKBiobank_2018.txt}\ 
+--target GS_QC\ 
+--thread 1\ 
+--print-snp\ 
+--beta\ 
+--stat Effect\ 
+--binary-target F\ 
+--snp MarkerName\ 
+--A1 Allele1\ 
+--A2 Allele2\ 
+--se StdErr\ 
+--pvalue P-value\ 
+--bar-levels 0.00000005,0.0000005,0.000005,0.00005,0.0005,0.005,0.05,0.5,0.75,1\ 
+--fastscore\ 
+--all-score\ 
+--ld all_phase3\ 
+--pheno-file {GSheight_res}\ 
+--pheno-col {HEI_res}\ 
+--out {GSheight}
+
+```
+## PRS_PC  
+
+10 different PGSs are available for each phenotype created using different parameters. The most appropriate PRS is unclear, particularly as we have different phenotypes. For example, p=0.05 is a threshold that has been found to produce the best performing PRS for depression in an independent validation dataset (Wray et al., 2018). This threshold may not result in the best performing PRS for height or educational attainment.  
+
+A new method suggests using the 1st principal component of all the available PRS is a valid method moving forward.  
+
+```{r, eval=FALSE}  
+
+hPRS <- read.table("GSheight.all.score", header=T)
+eaPRS <- read.table("GSea.all.score", header=T)
+depPRS <- read.table("GSdep.all.score", header=T)
+
+for(prs in c('h', 'ea', 'dep')){
+  pheno <- prs
+  prs <- get(paste0(prs, "PRS")) 
+  pca <- prcomp(prs[,3:12], center=TRUE, scale.=TRUE)
+  
+  prs$PRS_pc <- pca$x[,1] # adding PRS_pc (PC1) to the PRS dataframe
+  
+  # obtain PRS_pc correlations with generated PRS
+  cor_values <- c()
+  for(col in c(3:12)){
+    cor_values <- rbind(cor_values, cor(prs[,col], prs[,13]))
+  }
+  
+  pca_loading <- as.data.frame(pca$rotation)[1]
+  colnames(pca_loading) <- 'loading_values'
+  pc_info <- cbind(pca_loading, cor_values)
+  pc_info$PC1_r2 <- summary(pca)$importance[,1][2]
+  pc_info$PC1_sd <- summary(pca)$importance[,1][1]
+  write.csv(pc_info, paste0(pheno, "_PRSpc_info.csv"), row.names=T, quote=F)
+  write.table(prs, paste0(pheno, "_allPRS"), row.names=F, quote=F)
+}
+
+```
+
+# Sanity Checks  
+
+**1. Are the calculated PGS_pcs associated with our phenotypes of interest?**  
+
+```{r, eval=FALSE}
+rm(list=ls())
+
+cov <- read.table("GScov", header=T)
+cov <- cov[,-1]
+GStrio <- read.table("GS_trio", header=T)
+
+offid <- as.data.frame(GStrio$IID)
+colnames(offid) <- 'IID'
+matid <- as.data.frame(GStrio$MID)
+colnames(matid) <- 'IID'
+patid <- as.data.frame(GStrio$PID)
+colnames(patid) <- 'IID'
+
+sc1_results <- c()
+all_res <- c()
+off_res <- c()
+mat_res <- c()
+pat_res <- c()
+
+for(prs_prefix in c('h', 'ea', 'dep')){
+  prs <- read.table(paste0(prs_prefix, '_allPRS'), header=T)
+  prs <- prs[,-1] # removing FID column
+  
+  for(pheno_prefix in c('HEIGHT', 'EA', 'GHQTotal', 'GHQDepression')){
+    
+    if(pheno_prefix=='GHQTotal' | pheno_prefix=='GHQDepression'){
+      pheno <- read.table(paste0(pheno_prefix, '_outliers_removed'), header=T)
+    } else {
+      pheno <- read.table(paste0(pheno_prefix, '_outliers_removed'), header=T)
+      pheno <- pheno[,-1] # removing FID column
+    }
+    
+    all_df <- Reduce(function(x,y) merge(x=x,y=y, by='IID'), list(pheno, prs, cov))
+    all_df['PRS_pc'] <- scale(all_df['PRS_pc'], center=TRUE, scale=TRUE)
+    colnames(all_df)[2] <- 'pheno'
+    off_df <- merge(all_df, offid, by='IID')
+    mat_df <- merge(all_df, matid, by='IID')
+    pat_df <- merge(all_df, patid, by='IID')
+    
+    if(pheno_prefix=='GHQTotal' | pheno_prefix=='GHQDepression'){
+      
+      # for binary traits we need to run glm() models 
+      for(threshold in 3:13){
+        all_glm <- summary(glm(pheno ~ all_df[,threshold]+C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20+AGE+SEX, data=all_df))
+        all_lm <- summary(lm(pheno ~ all_df[,threshold]+C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20+AGE+SEX, data=all_df))
+        all_subres <- c(all_glm$coefficients[2,], all_glm$df[2]+23, all_lm$adj.r.squared, 'all', pheno_prefix, names(all_df)[threshold], prs_prefix)
+        all_res <- rbind(all_res, all_subres)
+        
+        off_glm <- summary(glm(pheno ~ off_df[,threshold]+C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20+AGE+SEX, data=off_df))
+        off_lm <- summary(lm(pheno ~ off_df[,threshold]+C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20+AGE+SEX, data=off_df))
+        off_subres <- c(off_glm$coefficients[2,], off_glm$df[2]+23, off_lm$adj.r.squared, 'off', pheno_prefix, names(off_df)[threshold], prs_prefix)
+        off_res <- rbind(off_res, off_subres)
+        
+        mat_glm <- summary(glm(pheno ~ mat_df[,threshold]+C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20+AGE, data=mat_df))
+        mat_lm <- summary(lm(pheno ~ mat_df[,threshold]+C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20+AGE, data=mat_df))
+        mat_subres <- c(mat_glm$coefficients[2,], mat_glm$df[2]+23, mat_lm$adj.r.squared, 'mat', pheno_prefix, names(mat_df)[threshold], prs_prefix)
+        mat_res <- rbind(mat_res, mat_subres)
+        
+        pat_glm <- summary(glm(pheno ~ pat_df[,threshold]+C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20+AGE, data=pat_df))
+        pat_lm <- summary(lm(pheno ~ pat_df[,threshold]+C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20+AGE, data=pat_df))
+        pat_subres <- c(pat_glm$coefficients[2,], pat_glm$df[2]+23, pat_lm$adj.r.squared, 'pat', pheno_prefix, names(pat_df)[threshold], prs_prefix)
+        pat_res <- rbind(pat_res, pat_subres)
+        
+        results <- Reduce(function(x,y) rbind(x=x, y=y), list(all_res, off_res, mat_res, pat_res))
+      }
+      
+      sc1_results <- rbind(sc1_results, results)
+    
+    } else {
+
+      # for continuous traits we need to run lm() models 
+      for(threshold in 3:13){
+        all_lm <- summary(lm(pheno ~ all_df[,threshold]+C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20+AGE+SEX, data=all_df))
+        all_subres <- c(all_lm$coefficients[2,], all_lm$df[2]+23, all_lm$adj.r.squared, 'all', pheno_prefix, names(all_df)[threshold], prs_prefix)
+        all_res <- rbind(all_res, all_subres)
+        
+        off_lm <- summary(lm(pheno ~ off_df[,threshold]+C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20+AGE+SEX, data=off_df))
+        off_subres <- c(off_lm$coefficients[2,], off_lm$df[2]+23, off_lm$adj.r.squared, 'off', pheno_prefix, names(off_df)[threshold], prs_prefix)
+        off_res <- rbind(off_res, off_subres)
+      
+        mat_lm <- summary(lm(pheno ~ mat_df[,threshold]+C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20+AGE, data=mat_df))
+        mat_subres <- c(mat_lm$coefficients[2,], mat_lm$df[2]+23, mat_lm$adj.r.squared, 'mat', pheno_prefix, names(mat_df)[threshold], prs_prefix)
+        mat_res <- rbind(mat_res, mat_subres)
+        
+        pat_lm <- summary(lm(pheno ~ pat_df[,threshold]+C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20+AGE, data=pat_df))
+        pat_subres <- c(pat_lm$coefficients[2,], pat_lm$df[2]+23, pat_lm$adj.r.squared, 'pat', pheno_prefix, names(pat_df)[threshold], prs_prefix)
+        pat_res <- rbind(pat_res, pat_subres)
+        
+        results <- Reduce(function(x,y) rbind(x=x, y=y), list(all_res, off_res, mat_res, pat_res))
+      }
+      
+      sc1_results <- rbind(sc1_results, results)
+    }
+  }
+}
+colnames(sc1_results)[5:10] <- c('n', 'adjR2', 'sample', 'trait', 'prs_threshold', 'trait')
+sc1_results <- sc1_results[!duplicated(sc1_results),]
+write.csv(sc1_results, "PRS_pheno_associations.csv", row.names=F, quote=F)
+  
+```
+
+**2. Are the trio PGS_pcs and phenotypes correlated in the way we would expect?**  
+
+```{r, eval=FALSE}
+
+# TRIO PGS correlations
+
+pgs_cor <- c()
+
+for(prs_prefix in c('h', 'ea', 'dep')){
+  prs <- read.table(paste0(prs_prefix, '_allPRS'), header=T)
+  prs <- prs[,c(2,13)]
+  
+  df <- merge(GStrio, prs, by='IID', all.x=T)
+  colnames(prs) <- c('MID', 'mPRS_pc')
+  df2 <- merge(df, prs, by='MID', all.x=T)
+  colnames(prs) <- c('PID', 'pPRS_pc')
+  df3 <- merge(df2, prs, by='PID', all.x=T)
+  
+  o_m <- cor.test(df3$PRS_pc, df3$mPRS_pc)
+  o_p <- cor.test(df3$PRS_pc, df3$pPRS_pc)
+  m_p <- cor.test(df3$mPRS_pc, df3$pPRS_pc)
+  
+  for(cor in c('o_m', 'o_p', 'm_p')){
+    test <- get(cor)
+    test_info <- Reduce(function(x,y) cbind(x=x,y=y), list(cor, test$estimate, test$conf.int[1], test$conf.int[2], test$parameter, test$p.value, prs_prefix))
+    colnames(test_info) <- c('combo', 'r', 'lci', 'uci', 'df', 'pval', 'prs')
+    pgs_cor <- rbind(pgs_cor, test_info)
+  }
+}
+write.csv(pgs_cor, "trio_prspc_cor.csv", row.names=F, quote=F)
+
+# TRIO Pheno correlations  (!!!!!!!!!!!!!)
+pheno_cor <- c()
+
+for(pheno_prefix in c('HEIGHT', 'EA', 'GHQTotal', 'GHQDepression')){
+  pheno <- read.table(paste0(pheno_prefix, '_outliers_removed'), header=T)
+  
+  if(pheno_prefix=='HEIGHT' | pheno_prefix=='EA'){
+    pheno <- pheno[,-1] # remove FID column
+  }
+  
+  df <- merge(GStrio, pheno, by='IID', all.x=T)
+  colnames(pheno) <- c('MID', paste0('m_', pheno_prefix))
+  df2 <- merge(df, pheno, by='MID', all.x=T)
+  colnames(pheno) <- c('PID', paste0('p_', pheno_prefix))
+  df3 <- merge(df2, pheno, by='PID', all.x=T)
+  
+  o_m <- cor.test(df3[,7], df3[,8])
+  o_p <- cor.test(df3[,7], df3[,9])
+  m_p <- cor.test(df3[,8], df3[,9])  
+  
+  for(cor in c('o_m', 'o_p', 'm_p')){
+    test <- get(cor)
+    test_info <- Reduce(function(x,y) cbind(x=x,y=y), list(cor, test$estimate, test$conf.int[1], test$conf.int[2], test$parameter, test$p.value, pheno_prefix))
+    colnames(test_info) <- c('combo', 'r', 'lci', 'uci', 'df', 'pval', 'pheno')
+    pheno_cor <- rbind(pheno_cor, test_info)
+  }
+}
+write.csv(pheno_cor, "trio_pheno_cor.csv", row.names=F, quote=F)
+
+```
+
+# Analysis Dataframe  
+
+PRS are scaled to have a mean of 0 and sd of 1.  
+All variables are pre-corrected for covariates, 20 offspring PCs, 20 maternal and paternal PCs, parental age, offspring age, offspring sex. 
+
+```{r, eval=FALSE}
+
+rm(list=ls())
+
+#####################
+# read in trio data #
+#####################
+
+fam <- read.table("GS_QC.fam") #this file was renamed for convenience 
+fam <- fam[,2:4] 
+colnames(fam) <- c("IID", "PID", "MID")
+
+offid <- as.data.frame(fam$IID)
+colnames(offid) <- 'IID'
+matid <- as.data.frame(unique(fam$MID))
+colnames(matid) <- 'IID'
+patid <- as.data.frame(unique(fam$PID))
+colnames(patid) <- 'IID'
+
+##########################
+# read in covariate data #
+##########################
+
+cov <- read.table("GScov", header=T)
+cov <- cov[,-1] # removing FID column  
+cov$SEX <- as.factor(cov$SEX)
+
+ocov <- merge(offid, cov, by='IID', all.x=T)
+mcov <- merge(matid, cov, by='IID', all.x=T)
+colnames(mcov)[1] <- 'MID'
+mcov <- mcov[!duplicated(mcov),]
+pcov <- merge(patid, cov, by='IID', all.x=T)
+colnames(pcov)[1] <- 'PID'
+pcov <- pcov[!duplicated(pcov),]
+
+for(col in 2:23){
+  colnames(ocov)[col] <- paste0('o', names(ocov)[col])
+  colnames(mcov)[col] <- paste0('m', names(mcov)[col])
+  colnames(pcov)[col] <- paste0('p', names(pcov)[col])
+}
+
+allcov <- merge(fam, ocov, by='IID')
+allcov <- merge(allcov, mcov, by='MID', all.x=TRUE)
+allcov <- merge(allcov, pcov, by='PID', all.x=TRUE)
+
+triocov <- allcov[complete.cases(allcov),]
+
+###################################################
+# read in phenotypes & regress out all covariates # 
+###################################################
+
+for(pheno_prefix in c('HEIGHT', 'EA', 'GHQTotal', 'GHQDepression')){
+  pheno <- read.table(paste0(pheno_prefix, '_outliers_removed'), header=T)
+  
+  if(pheno_prefix=='HEIGHT' | pheno_prefix=='EA'){
+    pheno <- pheno[,-1] #removing FID column
+  }
+  
+  colnames(pheno)[2] <- 'pheno'
+  
+  odf <- merge(pheno, triocov, by='IID')
+  odf <- odf[,-c(28, 50)] # removing IIDs, and parental sex variables
+  colnames(pheno)[1] <- 'MID'
+  mdf <- merge(pheno, triocov, by='MID')
+  mdf <- mdf[,-c(28, 50)]
+  colnames(pheno)[1] <- 'PID'
+  pdf <- merge(pheno, triocov, by='PID')
+  pdf <- pdf[,-c(28, 50)]
+    
+  # offspring pheno
+  oreg <- summary(lm(pheno ~ ., data = odf[-c(1,3:4)]))
+  oPheno <- cbind(odf$IID, oreg$residuals)
+  colnames(oPheno) <- c('IID', paste0(pheno_prefix, '_res'))
+    
+  # maternal pheno
+  mreg <- summary(lm(pheno ~ ., data = mdf[-c(1,3:4)]))
+  mPheno <- cbind(mdf$MID, mreg$residuals)
+  colnames(mPheno) <- c('MID', paste0('m_', pheno_prefix, '_res'))
+    
+  # paternal pheno
+  preg <- summary(lm(pheno ~ ., data = pdf[-c(1,3:4)]))
+  pPheno <- cbind(pdf$PID, preg$residuals)
+  colnames(pPheno) <- c('PID', paste0('p_', pheno_prefix, '_res'))
+    
+  write.csv(oPheno, paste0('o_', pheno_prefix, '_residualised'), row.names=F, quote=F)
+  write.csv(mPheno, paste0('m_', pheno_prefix, '_residualised'), row.names=F, quote=F)
+  write.csv(pPheno, paste0('p_', pheno_prefix, '_residualised'), row.names=F, quote=F)
+}
+
+#####################################################
+# read in prs values and regress out all covariates #  
+#####################################################
+
+for(prs_prefix in c('h', 'ea', 'dep')){
+  prs <- read.table(paste0(prs_prefix, '_allPRS'), header=T)
+  prs <- prs[,c(2,13)] # using PRSpc
+  prs$PRS_pc <- scale(prs$PRS_pc, center=TRUE, scale=TRUE)
+  
+  odf <- merge(prs, triocov, by='IID')
+  odf <- odf[,-c(28, 50)] # removing IIDs, and parental sex variables
+  colnames(prs)[1] <- 'MID'
+  mdf <- merge(prs, triocov, by='MID')
+  mdf <- mdf[,-c(28, 50)]
+  colnames(prs)[1] <- 'PID'
+  pdf <- merge(prs, triocov, by='PID')
+  pdf <- pdf[,-c(28, 50)]
+  
+  # offspring prs
+  oreg <- summary(lm(PRS_pc ~ ., data = odf[-c(1,3:4)]))
+  oPRS <- cbind(odf$IID, oreg$residuals)
+  colnames(oPRS) <- c('IID', paste0(prs_prefix, '_PRSres'))
+    
+  # maternal prs
+  mreg <- summary(lm(PRS_pc ~ ., data = mdf[-c(1,3:4)]))
+  mPRS <- cbind(mdf$MID, mreg$residuals)
+  colnames(mPRS) <- c('MID', paste0('m_', prs_prefix, '_PRSres'))
+    
+  # paternal prs
+  preg <- summary(lm(PRS_pc ~ ., data = pdf[-c(1,3:4)]))
+  pPRS <- cbind(pdf$PID, preg$residuals)
+  colnames(pPRS) <- c('PID', paste0('p_', prs_prefix, '_PRSres'))
+    
+  write.csv(oPRS, paste0('o_', prs_prefix, 'PRS_residualised'), row.names=F, quote=F)
+  write.csv(mPRS, paste0('m_', prs_prefix, 'PRS_residualised'), row.names=F, quote=F)
+  write.csv(pPRS, paste0('p_', prs_prefix, 'PRS_residualised'), row.names=F, quote=F)
+}
+
+#######################################
+# create dataframe for each phenotype #
+#######################################
+
+GStrio <- read.table("GS_trio", header=T)
+GSsex <- GStrio[,c(2,5)]
+GStrio <- GStrio[,c(1:4)]
+
+analysis_df <- GStrio
+
+for(pheno_prefix in c('HEIGHT', 'EA', 'GHQTotal', 'GHQDepression')){
+  
+  if(pheno_prefix=='HEIGHT'){
+    prs_prefix <- 'h'
+  } else if (pheno_prefix=='EA'){
+    prs_prefix <- 'ea'
+  } else {
+    prs_prefix <- 'dep'
+  }
+  
+  # read in phenotypes  
+  oPheno <- read.csv(paste0('o_', pheno_prefix, '_residualised'), header=T)
+  mPheno <- read.csv(paste0('m_', pheno_prefix, '_residualised'), header=T)
+  mPheno <- mPheno[!duplicated(mPheno[,1]),]
+  pPheno <- read.csv(paste0('p_', pheno_prefix, '_residualised'), header=T)
+  pPheno <- pPheno[!duplicated(pPheno[,1]),]
+
+  # read in PRS  
+  oPRS <- read.csv(paste0('o_', prs_prefix, 'PRS_residualised'), header=T)
+  mPRS <- read.csv(paste0('m_', prs_prefix, 'PRS_residualised'), header=T)
+  mPRS <- mPRS[!duplicated(mPRS[,1]),]
+  pPRS <- read.csv(paste0('p_', prs_prefix, 'PRS_residualised'), header=T)
+  pPRS <- pPRS[!duplicated(pPRS[,1]),]
+  
+  # create dataframe 
+  if(pheno_prefix=='GHQTotal'){
+    df <- Reduce(function(x,y) merge(x=x,y=y, by='IID', all.x=T, all.y=T), list(GStrio, oPheno))
+    df <- Reduce(function(x,y) merge(x=x,y=y, by='MID', all.x=T, all.y=T), list(df, mPheno))
+    df <- Reduce(function(x,y) merge(x=x,y=y, by='PID', all.x=T, all.y=T), list(df, pPheno))
+  } else {
+    df <- Reduce(function(x,y) merge(x=x,y=y, by='IID', all.x=T, all.y=T), list(GStrio, oPheno, oPRS))
+    df <- Reduce(function(x,y) merge(x=x,y=y, by='MID', all.x=T, all.y=T), list(df, mPheno, mPRS))
+    df <- Reduce(function(x,y) merge(x=x,y=y, by='PID', all.x=T, all.y=T), list(df, pPheno, pPRS))
+  }
+  
+  analysis_df <- merge(analysis_df, df, by=c('FID', 'IID', 'MID', 'PID'), all.x=TRUE)
+
+}
+analysis_df <- merge(analysis_df, GSsex, by='IID', all.x=TRUE)
+
+write.table(analysis_df, 'IGE_analysis_df', row.names=F, quote=F)
+
+```
+
+# Regression Analyses  
+
+*I*. oPheno ~ oPRS *This model captures direct GE*  
+*II*. oPheno ~ oPRS + mPRS + pPRS *This model captures both direct and indirect GE*  
+  
+*I*. oPheno ~ oPRS + mPheno + pPheno  
+*II*. oPheno ~ oPRS + mPheno + pPheno+ mPRS + pPRS  
+
+*We are not interpreting beta estimates as these are likely to be biased/inaccurate as variables in the models are correlated!*
+Comparison of the models using log likelihood can help us infer whether the effects of indirect genetic effects are present (specifically comparison of model *I* and *II*)  
+
+```{r, eval=FALSE}
+rm(list=ls())
+
+library(lmerTest) #this package allows us to run regression models with fixed and random effects
+library(MuMIn) #this package allows us to obtain the R2 of our models, R2m (Marginal) R2 > fixed effects, R2c (Conditional) > whole model
+library(dplyr)
+
+df <- read.table("IGE_analysis_df", header=T)
+df$sibID <- paste0(df$MID, '_', df$PID)
+df$index <- rownames(df)
+
+for(pheno_prefix in c('HEIGHT', 'EA', 'GHQTotal', 'GHQDepression')){
+  
+  if(pheno_prefix=='HEIGHT'){
+    prs_prefix <- 'h'
+    oPhenoCol <- 5
+    mPhenoCol <- 7
+    pPhenoCol <- 9
+    oPRScol <- 6
+    mPRScol <- 8
+    pPRScol <- 10
+    
+  } else if (pheno_prefix=='EA'){
+    prs_prefix <- 'ea'
+    oPhenoCol <- 11
+    mPhenoCol <- 13
+    pPhenoCol <- 15
+    oPRScol <- 12
+    mPRScol <- 14
+    pPRScol <- 16
+    
+  } else if (pheno_prefix=='GHQTotal'){
+    prs_prefix <- 'dep'
+    oPhenoCol <- 17
+    mPhenoCol <- 18
+    pPhenoCol <- 19
+    oPRScol <- 21
+    mPRScol <- 23
+    pPRScol <- 25
+    
+  } else {
+    prs_prefix <- 'dep'
+    oPhenoCol <- 20
+    mPhenoCol <- 22
+    pPhenoCol <- 24
+    oPRScol <- 21
+    mPRScol <- 23
+    pPRScol <- 25
+  }
+  
+  # all trios
+  alldf_index <- df[, c(oPhenoCol, mPhenoCol, pPhenoCol, oPRScol, mPRScol, pPRScol, 28)]
+  alldf_index <- as.numeric(alldf_index[complete.cases(alldf_index),7])
+  alldf <- df[rownames(df)%in%alldf_index,]
+  
+  model1 <- lmer(alldf[,oPhenoCol] ~ alldf[,oPRScol] + (1|sibID), data = alldf)
+  results_model1 <- cbind(as.data.frame(coef(summary(model1))), as.data.frame(r.squaredGLMM(model1)))
+  rownames(results_model1) <- c('Intercept', 'oPRS')
+  
+  model2 <- lmer(alldf[,oPhenoCol] ~ alldf[,oPRScol] + alldf[,mPRScol] + alldf[,pPRScol] + (1|sibID), data = alldf)
+  results_model2 <- cbind(as.data.frame(coef(summary(model2))), as.data.frame(r.squaredGLMM(model2)))
+  rownames(results_model2) <- c('Intercept', 'oPRS', 'mPRS', 'pPRS')
+
+  model3 <- lmer(alldf[,oPhenoCol] ~ alldf[,oPRScol] + alldf[,mPhenoCol] + alldf[,pPhenoCol] + (1|sibID), data = alldf)
+  results_model3 <- cbind(as.data.frame(coef(summary(model3))), as.data.frame(r.squaredGLMM(model3)))
+  rownames(results_model3) <- c('Intercept', 'oPRS', 'mPheno', 'pPheno')
+  
+  model4 <- lmer(alldf[,oPhenoCol] ~ alldf[,oPRScol] + alldf[,mPRScol] + alldf[,pPRScol] + alldf[,mPhenoCol] + alldf[,pPhenoCol] + (1|sibID), data = alldf)
+  results_model4 <- cbind(as.data.frame(coef(summary(model4))), as.data.frame(r.squaredGLMM(model4)))
+  rownames(results_model4) <- c('Intercept', 'oPRS', 'mPRS', 'pPRS', 'mPheno', 'pPheno')
+  
+  results <- Reduce(function(x,y) rbind(x=x, y=y), list(results_model1, results_model2, results_model3, results_model4))
+  
+  write.csv(results, paste0(pheno_prefix, 'regression_results.csv'), row.names=T, quote=F)
+  
+  # comparison
+  
+  model1_v_2 <- as.data.frame(anova(model1, model2))
+  model1_v_2$comparison <- 'model1_v_2'
+  
+  model1_v_3 <- as.data.frame(anova(model1, model3))
+  model1_v_3$comparison <- 'model1_v_3'
+  
+  model1_v_4 <- as.data.frame(anova(model1, model4))
+  model1_v_4$comparison <- 'model1_v_4'
+  
+  model2_v_4 <- as.data.frame(anova(model2, model4))
+  model2_v_4$comparison <- 'model2_v_4'
+  
+  model3_v_4 <- as.data.frame(anova(model3, model4))
+  model3_v_4$comparison <- 'model3_v_4'
+  
+  results <- bind_rows(model1_v_2, model1_v_3, model1_v_4, model2_v_4, model3_v_4)
+  results$fdr <- p.adjust(results$`Pr(>Chisq)`, method="fdr", n=length(results$`Pr(>Chisq)`))
+  
+  write.csv(results, paste0(pheno_prefix, 'regression_model_comparison.csv'), row.names=F, quote=F)
+  
+  # sex specific  
+  for(sex_prefix in c('M', 'F')){
+    
+    if(sex_prefix=='M'){
+      sex <- 1
+    } else {
+      sex <- 2
+    }
+    
+    sexdf_index <- subset(alldf, alldf$SEX==sex)
+    sexdf_index <- as.numeric(sexdf_index[,28])
+    sexdf <- df[rownames(df)%in%sexdf_index,]
+    
+    model1 <- lmer(sexdf[,oPhenoCol] ~ sexdf[,oPRScol] + (1|sibID), data = sexdf)
+    results_model1 <- cbind(as.data.frame(coef(summary(model1))), as.data.frame(r.squaredGLMM(model1)))
+    rownames(results_model1) <- c('Intercept', 'oPRS')
+    
+    model2 <- lmer(sexdf[,oPhenoCol] ~ sexdf[,oPRScol] + sexdf[,mPRScol] + sexdf[,pPRScol] + (1|sibID), data = sexdf)
+    results_model2 <- cbind(as.data.frame(coef(summary(model2))), as.data.frame(r.squaredGLMM(model2)))
+    rownames(results_model2) <- c('Intercept', 'oPRS', 'mPRS', 'pPRS')
+  
+    model3 <- lmer(sexdf[,oPhenoCol] ~ sexdf[,oPRScol] + sexdf[,mPhenoCol] + sexdf[,pPhenoCol] + (1|sibID), data = sexdf)
+    results_model3 <- cbind(as.data.frame(coef(summary(model3))), as.data.frame(r.squaredGLMM(model3)))
+    rownames(results_model3) <- c('Intercept', 'oPRS', 'mPheno', 'pPheno')
+    
+    model4 <- lmer(sexdf[,oPhenoCol] ~ sexdf[,oPRScol] + sexdf[,mPRScol] + sexdf[,pPRScol] + sexdf[,mPhenoCol] + sexdf[,pPhenoCol] + (1|sibID), data = sexdf)
+    results_model4 <- cbind(as.data.frame(coef(summary(model4))), as.data.frame(r.squaredGLMM(model4)))
+    rownames(results_model4) <- c('Intercept', 'oPRS', 'mPRS', 'pPRS', 'mPheno', 'pPheno')
+    
+    results <- Reduce(function(x,y) rbind(x=x, y=y), list(results_model1, results_model2, results_model3, results_model4))
+    
+    write.csv(results, paste0(pheno_prefix, 'regression_results_', sex_prefix, '.csv'), row.names=T, quote=F)
+    
+  }
+  
+  # singleton analyses  
+  
+  singledf_index <- alldf[!duplicated(alldf$sibID),]
+  singledf_index <- as.numeric(singledf_index[,28])
+  singledf <- df[rownames(df)%in%singledf_index,]
+  
+  if(pheno_prefix=='HEIGHT' | pheno_prefix=='EA'){
+    
+    model1 <- lm(singledf[,oPhenoCol] ~ singledf[,oPRScol], data = singledf)
+    results_model1 <- cbind(as.data.frame(summary(model1)$coefficients), as.data.frame(summary(model1)$adj.r.squared))
+    rownames(results_model1) <- c('Intercept', 'oPRS')
+    colnames(results_model1)[5] <- 'adjR2'
+      
+    model2 <- lm(singledf[,oPhenoCol] ~ singledf[,oPRScol] + singledf[,mPRScol] + singledf[,pPRScol], data = singledf)
+    results_model2 <- cbind(as.data.frame(summary(model2)$coefficients), as.data.frame(summary(model2)$adj.r.squared))
+    rownames(results_model2) <- c('Intercept', 'oPRS', 'mPRS', 'pPRS')
+    colnames(results_model2)[5] <- 'adjR2'
+    
+    model3 <- lm(singledf[,oPhenoCol] ~ singledf[,oPRScol] + singledf[,mPhenoCol] + singledf[,pPhenoCol], data = singledf)
+    results_model3 <- cbind(as.data.frame(summary(model3)$coefficients), as.data.frame(summary(model3)$adj.r.squared))
+    rownames(results_model3) <- c('Intercept', 'oPRS', 'mPheno', 'pPheno')
+    colnames(results_model3)[5] <- 'adjR2'
+
+    model4 <- lm(singledf[,oPhenoCol] ~ singledf[,oPRScol] + singledf[,mPRScol] + singledf[,pPRScol] + singledf[,mPhenoCol] + singledf[,pPhenoCol], data = singledf)
+    results_model4 <- cbind(as.data.frame(summary(model4)$coefficients), as.data.frame(summary(model4)$adj.r.squared))
+    rownames(results_model4) <- c('Intercept', 'oPRS', 'mPRS', 'pPRS', 'mPheno', 'pPheno')
+    colnames(results_model4)[5] <- 'adjR2'
+
+    results <- Reduce(function(x,y) rbind(x=x, y=y), list(results_model1, results_model2, results_model3, results_model4))
+    
+  } else {
+    
+    model1 <- glm(singledf[,oPhenoCol] ~ singledf[,oPRScol], data = singledf)
+    model1_lm <- lm(singledf[,oPhenoCol] ~ singledf[,oPRScol], data = singledf)
+    results_model1 <- cbind(as.data.frame(summary(model1)$coefficients), as.data.frame(summary(model1_lm)$adj.r.squared))
+    rownames(results_model1) <- c('Intercept', 'oPRS')
+    colnames(results_model1)[5] <- 'adjR2'
+    
+    model2 <- lm(singledf[,oPhenoCol] ~ singledf[,oPRScol] + singledf[,mPRScol] + singledf[,pPRScol], data = singledf)
+    model2_lm <- lm(singledf[,oPhenoCol] ~ singledf[,oPRScol] + singledf[,mPRScol] + singledf[,pPRScol], data = singledf)
+    results_model2 <- cbind(as.data.frame(summary(model2)$coefficients), as.data.frame(summary(model2_lm)$adj.r.squared))
+    rownames(results_model2) <- c('Intercept', 'oPRS', 'mPRS', 'pPRS')
+    colnames(results_model2)[5] <- 'adjR2'
+
+    model3 <- lm(singledf[,oPhenoCol] ~ singledf[,oPRScol] + singledf[,mPhenoCol] + singledf[,pPhenoCol], data = singledf)
+    model3_lm <- lm(singledf[,oPhenoCol] ~ singledf[,oPRScol] + singledf[,mPhenoCol] + singledf[,pPhenoCol], data = singledf)
+    results_model3 <- cbind(as.data.frame(summary(model3)$coefficients), as.data.frame(summary(model3_lm)$adj.r.squared))
+    rownames(results_model3) <- c('Intercept', 'oPRS', 'mPheno', 'pPheno')
+    colnames(results_model3)[5] <- 'adjR2'
+      
+    model4 <- lm(singledf[,oPhenoCol] ~ singledf[,oPRScol] + singledf[,mPRScol] + singledf[,pPRScol] + singledf[,mPhenoCol] + singledf[,pPhenoCol], data = singledf)
+    model4_lm <- lm(singledf[,oPhenoCol] ~ singledf[,oPRScol] + singledf[,mPRScol] + singledf[,pPRScol] + singledf[,mPhenoCol] + singledf[,pPhenoCol], data = singledf)
+    results_model4 <- cbind(as.data.frame(summary(model4)$coefficients), as.data.frame(summary(model4_lm)$adj.r.squared))
+    rownames(results_model4) <- c('Intercept', 'oPRS', 'mPRS', 'pPRS', 'mPheno', 'pPheno')
+    colnames(results_model4)[5] <- 'adjR2'
+
+    results <- Reduce(function(x,y) rbind(x=x, y=y), list(results_model1, results_model2, results_model3, results_model4))
+  }
+  
+  write.csv(results, paste0(pheno_prefix, 'regression_results_singleton.csv'), row.names=T, quote=F)
+}
+
+# problem is, oPhenoCol are not aligning with actual col numbers 
+# eg alldf oPhenoCol should be col 1
+
+```
+
+# Pathway models {.tabset}
+
+Create separate dataframes for each phenotype
+
+```{r, eval=FALSE}
+
+rm(list=ls())
+library(lavaan)
+
+df <- read.table("IGE_analysis_df", header=T)
+df$sibID <- paste0(df$MID, '_', df$PID)
+df$index <- rownames(df)
+
+for(pheno_prefix in c('HEIGHT', 'EA', 'GHQTotal', 'GHQDepression')){
+  
+  if(pheno_prefix=='HEIGHT'){
+    prs_prefix <- 'h'
+    oPhenoCol <- 5
+    mPhenoCol <- 7
+    pPhenoCol <- 9
+    oPRScol <- 6
+    mPRScol <- 8
+    pPRScol <- 10
+    
+  } else if (pheno_prefix=='EA'){
+    prs_prefix <- 'ea'
+    oPhenoCol <- 11
+    mPhenoCol <- 13
+    pPhenoCol <- 15
+    oPRScol <- 12
+    mPRScol <- 14
+    pPRScol <- 16
+    
+  } else if (pheno_prefix=='GHQTotal'){
+    prs_prefix <- 'dep'
+    oPhenoCol <- 17
+    mPhenoCol <- 18
+    pPhenoCol <- 19
+    oPRScol <- 21
+    mPRScol <- 23
+    pPRScol <- 25
+    
+  } else {
+    prs_prefix <- 'dep'
+    oPhenoCol <- 20
+    mPhenoCol <- 22
+    pPhenoCol <- 24
+    oPRScol <- 21
+    mPRScol <- 23
+    pPRScol <- 25
+  }
+  
+  # create pathway dataframes 
+  triodf <- df[, c(oPhenoCol, mPhenoCol, pPhenoCol, oPRScol, mPRScol, pPRScol, 26:28)]
+  triodf <- triodf[complete.cases(triodf),]
+  
+  write.csv(triodf, paste0(pheno_prefix, "_pathwaymodel_df.csv"), row.names=F, quote=F)
+}
+
+```
+
+## Height  
+
+Path h & i restricted to 0.5:  
+
+```{r, eval=FALSE}
+
+rm(list=ls())
+library(lavaan)
+
+df <- read.csv("HEIGHT_pathwaymodel_df.csv", header=T)
+
+##############
+#SIMPLE MODEL#
+##############
+
+# Define model
+
+model <- ' 
+
+# direct effects
+HEIGHT_res ~ c*m_h_PRSres
+HEIGHT_res ~ b*p_h_PRSres
+           
+# mediator
+h_PRSres ~ 0.5*m_h_PRSres
+h_PRSres ~ 0.5*p_h_PRSres
+HEIGHT_res ~ a*h_PRSres
+
+# indirect effects (i*a, h*a)
+ia := 0.5*a
+ha := 0.5*a
+
+# total effects 
+total_mum := c + (0.5*a)
+total_dad := b + (0.5*a)
+
+# covariance
+m_h_PRSres ~~ p_h_PRSres
+'
+
+# Fit the model
+fitM <- sem(model, data=df, estimator='ML')
+
+sem_model <- summary(fitM, standardized=TRUE, fit.measures=TRUE, ci=TRUE)
+sem_model_df <- as.data.frame(sem_model$PE)
+sem_model_final <- sem_model_df[sem_model_df$label != "", c(1:4,6:7,9:11)] #here we are extracting values of interest e.g. est, se, p, ci
+simple_model <- cbind(sem_model_final, AIC(fitM))
+
+write.csv(simple_model, "height_prspc_pa_m1.csv", row.names=F, quote=F)
+
+
+################
+#EXTENDED MODEL#
+################
+
+# Define model
+
+model <- '
+
+#direct effects
+HEIGHT_res ~ c*m_h_PRSres
+HEIGHT_res ~ b*p_h_PRSres       
+
+#mediator
+h_PRSres ~ 0.5*m_h_PRSres
+h_PRSres ~ 0.5*p_h_PRSres 
+
+HEIGHT_res ~ a*h_PRSres
+
+p_HEIGHT_res ~ d*p_h_PRSres
+m_HEIGHT_res ~ e*m_h_PRSres
+
+HEIGHT_res ~ f*p_HEIGHT_res
+HEIGHT_res ~ g*m_HEIGHT_res
+
+# indirect effects (i*a, h*a)
+ia := 0.5*a
+ha := 0.5*a
+df := d*f
+eg := e*g
+
+
+# total effects 
+total_mum := c + (0.5*a) + (e*g) 
+total_dad := b + (0.5*a) + (d*f) 
+
+# covariance
+m_h_PRSres ~~ p_h_PRSres
+m_HEIGHT_res ~~ p_HEIGHT_res
+
+'
+
+# Fit the model
+fitM <- sem(model, data=df, estimator='ML')
+sem_model <- summary(fitM, standardized=TRUE, fit.measures=TRUE, ci=TRUE)
+sem_model_df <- as.data.frame(sem_model$PE)
+sem_model_final <- sem_model_df[sem_model_df$label != "", c(1:4,6:7,9:11)] #here we are extracting values of interest e.g. est, se, p, ci
+extended_model <- cbind(sem_model_final, AIC(fitM))
+
+write.csv(extended_model, "height_prspc_pa_m2.csv", row.names=F, quote=F)
+
+```
+
+All paths freely estimated:
+
+```{r, eval=FALSE}
+
+rm(list=ls())
+library(lavaan)
+
+df <- read.csv("HEIGHT_pathwaymodel_df.csv", header=T)
+
+##############
+#SIMPLE MODEL#
+##############
+
+# Define model
+
+model <- ' 
+
+# direct effects
+HEIGHT_res ~ c*m_h_PRSres
+HEIGHT_res ~ b*p_h_PRSres
+           
+# mediator
+h_PRSres ~ i*m_h_PRSres
+h_PRSres ~ h*p_h_PRSres
+HEIGHT_res ~ a*h_PRSres
+
+# indirect effects (i*a, h*a)
+ia := i*a
+ha := h*a
+
+# total effects 
+total_mum := c + (i*a)
+total_dad := b + (h*a)
+
+# covariance
+m_h_PRSres ~~ p_h_PRSres
+'
+
+# Fit the model
+fitM <- sem(model, data=df, estimator='ML')
+
+sem_model <- summary(fitM, standardized=TRUE, fit.measures=TRUE, ci=TRUE)
+sem_model_df <- as.data.frame(sem_model$PE)
+sem_model_final <- sem_model_df[sem_model_df$label != "", c(1:4,6:7,9:11)] #here we are extracting values of interest e.g. est, se, p, ci
+simple_model <- cbind(sem_model_final, AIC(fitM))
+
+write.csv(simple_model, "height_prspc_pa_m1_fm.csv", row.names=F, quote=F)
+
+
+################
+#EXTENDED MODEL#
+################
+
+# Define model
+
+model <- '
+
+#direct effects
+HEIGHT_res ~ c*m_h_PRSres
+HEIGHT_res ~ b*p_h_PRSres       
+
+#mediator
+h_PRSres ~ i*m_h_PRSres
+h_PRSres ~ h*p_h_PRSres 
+
+HEIGHT_res ~ a*h_PRSres
+
+p_HEIGHT_res ~ d*p_h_PRSres
+m_HEIGHT_res ~ e*m_h_PRSres
+
+HEIGHT_res ~ f*p_HEIGHT_res
+HEIGHT_res ~ g*m_HEIGHT_res
+
+# indirect effects (i*a, h*a)
+ia := i*a
+ha := h*a
+df := d*f
+eg := e*g
+
+
+# total effects 
+total_mum := c + (i*a) + (e*g) 
+total_dad := b + (h*a) + (d*f) 
+
+# covariance
+m_h_PRSres ~~ p_h_PRSres
+m_HEIGHT_res ~~ p_HEIGHT_res
+
+'
+
+# Fit the model
+fitM <- sem(model, data=df, estimator='ML')
+sem_model <- summary(fitM, standardized=TRUE, fit.measures=TRUE, ci=TRUE)
+sem_model_df <- as.data.frame(sem_model$PE)
+sem_model_final <- sem_model_df[sem_model_df$label != "", c(1:4,6:7,9:11)] #here we are extracting values of interest e.g. est, se, p, ci
+extended_model <- cbind(sem_model_final, AIC(fitM))
+
+write.csv(extended_model, "height_prspc_pa_m2_fm.csv", row.names=F, quote=F)
+
+```
+
+Female only:  
+
+```{r, eval=FALSE}
+
+rm(list=ls())
+library(lavaan)
+
+df <- read.csv("HEIGHT_pathwaymodel_df.csv", header=T)
+df <- subset(df, df$SEX==2)
+
+##############
+#SIMPLE MODEL#
+##############
+
+# Define model
+
+model <- ' 
+
+# direct effects
+HEIGHT_res ~ c*m_h_PRSres
+HEIGHT_res ~ b*p_h_PRSres
+           
+# mediator
+h_PRSres ~ 0.5*m_h_PRSres
+h_PRSres ~ 0.5*p_h_PRSres
+HEIGHT_res ~ a*h_PRSres
+
+# indirect effects (i*a, h*a)
+ia := 0.5*a
+ha := 0.5*a
+
+# total effects 
+total_mum := c + (0.5*a)
+total_dad := b + (0.5*a)
+
+# covariance
+m_h_PRSres ~~ p_h_PRSres
+'
+
+# Fit the model
+fitM <- sem(model, data=df, estimator='ML')
+
+sem_model <- summary(fitM, standardized=TRUE, fit.measures=TRUE, ci=TRUE)
+sem_model_df <- as.data.frame(sem_model$PE)
+sem_model_final <- sem_model_df[sem_model_df$label != "", c(1:4,6:7,9:11)] #here we are extracting values of interest e.g. est, se, p, ci
+simple_model <- cbind(sem_model_final, AIC(fitM))
+
+write.csv(simple_model, "height_prspc_pa_m1_F.csv", row.names=F, quote=F)
+
+
+################
+#EXTENDED MODEL#
+################
+
+# Define model
+
+model <- '
+
+#direct effects
+HEIGHT_res ~ c*m_h_PRSres
+HEIGHT_res ~ b*p_h_PRSres       
+
+#mediator
+h_PRSres ~ 0.5*m_h_PRSres
+h_PRSres ~ 0.5*p_h_PRSres 
+
+HEIGHT_res ~ a*h_PRSres
+
+p_HEIGHT_res ~ d*p_h_PRSres
+m_HEIGHT_res ~ e*m_h_PRSres
+
+HEIGHT_res ~ f*p_HEIGHT_res
+HEIGHT_res ~ g*m_HEIGHT_res
+
+# indirect effects (i*a, h*a)
+ia := 0.5*a
+ha := 0.5*a
+df := d*f
+eg := e*g
+
+
+# total effects 
+total_mum := c + (0.5*a) + (e*g) 
+total_dad := b + (0.5*a) + (d*f) 
+
+# covariance
+m_h_PRSres ~~ p_h_PRSres
+m_HEIGHT_res ~~ p_HEIGHT_res
+
+'
+
+# Fit the model
+fitM <- sem(model, data=df, estimator='ML')
+sem_model <- summary(fitM, standardized=TRUE, fit.measures=TRUE, ci=TRUE)
+sem_model_df <- as.data.frame(sem_model$PE)
+sem_model_final <- sem_model_df[sem_model_df$label != "", c(1:4,6:7,9:11)] #here we are extracting values of interest e.g. est, se, p, ci
+extended_model <- cbind(sem_model_final, AIC(fitM))
+
+write.csv(extended_model, "height_prspc_pa_m2_F.csv", row.names=F, quote=F)
+
+```
+
+Male only: 
+
+```{r, eval=FALSE}
+rm(list=ls())
+library(lavaan)
+
+df <- read.csv("HEIGHT_pathwaymodel_df.csv", header=T)
+df <- subset(df, df$SEX==1)
+
+##############
+#SIMPLE MODEL#
+##############
+
+# Define model
+
+model <- ' 
+
+# direct effects
+HEIGHT_res ~ c*m_h_PRSres
+HEIGHT_res ~ b*p_h_PRSres
+           
+# mediator
+h_PRSres ~ 0.5*m_h_PRSres
+h_PRSres ~ 0.5*p_h_PRSres
+HEIGHT_res ~ a*h_PRSres
+
+# indirect effects (i*a, h*a)
+ia := 0.5*a
+ha := 0.5*a
+
+# total effects 
+total_mum := c + (0.5*a)
+total_dad := b + (0.5*a)
+
+# covariance
+m_h_PRSres ~~ p_h_PRSres
+'
+
+# Fit the model
+fitM <- sem(model, data=df, estimator='ML')
+
+sem_model <- summary(fitM, standardized=TRUE, fit.measures=TRUE, ci=TRUE)
+sem_model_df <- as.data.frame(sem_model$PE)
+sem_model_final <- sem_model_df[sem_model_df$label != "", c(1:4,6:7,9:11)] #here we are extracting values of interest e.g. est, se, p, ci
+simple_model <- cbind(sem_model_final, AIC(fitM))
+
+write.csv(simple_model, "height_prspc_pa_m1_M.csv", row.names=F, quote=F)
+
+
+################
+#EXTENDED MODEL#
+################
+
+# Define model
+
+model <- '
+
+#direct effects
+HEIGHT_res ~ c*m_h_PRSres
+HEIGHT_res ~ b*p_h_PRSres       
+
+#mediator
+h_PRSres ~ 0.5*m_h_PRSres
+h_PRSres ~ 0.5*p_h_PRSres 
+
+HEIGHT_res ~ a*h_PRSres
+
+p_HEIGHT_res ~ d*p_h_PRSres
+m_HEIGHT_res ~ e*m_h_PRSres
+
+HEIGHT_res ~ f*p_HEIGHT_res
+HEIGHT_res ~ g*m_HEIGHT_res
+
+# indirect effects (i*a, h*a)
+ia := 0.5*a
+ha := 0.5*a
+df := d*f
+eg := e*g
+
+
+# total effects 
+total_mum := c + (0.5*a) + (e*g) 
+total_dad := b + (0.5*a) + (d*f) 
+
+# covariance
+m_h_PRSres ~~ p_h_PRSres
+m_HEIGHT_res ~~ p_HEIGHT_res
+
+'
+
+# Fit the model
+fitM <- sem(model, data=df, estimator='ML')
+sem_model <- summary(fitM, standardized=TRUE, fit.measures=TRUE, ci=TRUE)
+sem_model_df <- as.data.frame(sem_model$PE)
+sem_model_final <- sem_model_df[sem_model_df$label != "", c(1:4,6:7,9:11)] #here we are extracting values of interest e.g. est, se, p, ci
+extended_model <- cbind(sem_model_final, AIC(fitM))
+
+write.csv(extended_model, "height_prspc_pa_m2_M.csv", row.names=F, quote=F)
+
+```
+
+Singleton:
+
+```{r, eval=FALSE}
+rm(list=ls())
+library(lavaan)
+
+df <- read.csv("HEIGHT_pathwaymodel_df.csv", header=T)
+df <- df[!duplicated(df$sibID),]
+
+##############
+#SIMPLE MODEL#
+##############
+
+# Define model
+
+model <- ' 
+
+# direct effects
+HEIGHT_res ~ c*m_h_PRSres
+HEIGHT_res ~ b*p_h_PRSres
+           
+# mediator
+h_PRSres ~ 0.5*m_h_PRSres
+h_PRSres ~ 0.5*p_h_PRSres
+HEIGHT_res ~ a*h_PRSres
+
+# indirect effects (i*a, h*a)
+ia := 0.5*a
+ha := 0.5*a
+
+# total effects 
+total_mum := c + (0.5*a)
+total_dad := b + (0.5*a)
+
+# covariance
+m_h_PRSres ~~ p_h_PRSres
+'
+
+# Fit the model
+fitM <- sem(model, data=df, estimator='ML')
+
+sem_model <- summary(fitM, standardized=TRUE, fit.measures=TRUE, ci=TRUE)
+sem_model_df <- as.data.frame(sem_model$PE)
+sem_model_final <- sem_model_df[sem_model_df$label != "", c(1:4,6:7,9:11)] #here we are extracting values of interest e.g. est, se, p, ci
+simple_model <- cbind(sem_model_final, AIC(fitM))
+
+write.csv(simple_model, "height_prspc_pa_m1_single.csv", row.names=F, quote=F)
+
+
+################
+#EXTENDED MODEL#
+################
+
+# Define model
+
+model <- '
+
+#direct effects
+HEIGHT_res ~ c*m_h_PRSres
+HEIGHT_res ~ b*p_h_PRSres       
+
+#mediator
+h_PRSres ~ 0.5*m_h_PRSres
+h_PRSres ~ 0.5*p_h_PRSres 
+
+HEIGHT_res ~ a*h_PRSres
+
+p_HEIGHT_res ~ d*p_h_PRSres
+m_HEIGHT_res ~ e*m_h_PRSres
+
+HEIGHT_res ~ f*p_HEIGHT_res
+HEIGHT_res ~ g*m_HEIGHT_res
+
+# indirect effects (i*a, h*a)
+ia := 0.5*a
+ha := 0.5*a
+df := d*f
+eg := e*g
+
+
+# total effects 
+total_mum := c + (0.5*a) + (e*g) 
+total_dad := b + (0.5*a) + (d*f) 
+
+# covariance
+m_h_PRSres ~~ p_h_PRSres
+m_HEIGHT_res ~~ p_HEIGHT_res
+
+'
+
+# Fit the model
+fitM <- sem(model, data=df, estimator='ML')
+sem_model <- summary(fitM, standardized=TRUE, fit.measures=TRUE, ci=TRUE)
+sem_model_df <- as.data.frame(sem_model$PE)
+sem_model_final <- sem_model_df[sem_model_df$label != "", c(1:4,6:7,9:11)] #here we are extracting values of interest e.g. est, se, p, ci
+extended_model <- cbind(sem_model_final, AIC(fitM))
+
+write.csv(extended_model, "height_prspc_pa_m2_single.csv", row.names=F, quote=F)
+
+```
+
+Maternal Duo:  
+
+```{r, eval=FALSE}
+
+rm(list=ls())
+library(lavaan)
+
+df <- read.csv("HEIGHT_pathwaymodel_df.csv", header=T)
+
+##############
+#SIMPLE MODEL#
+##############
+
+# Define model
+
+model <- ' 
+
+# direct effects
+HEIGHT_res  ~ c*m_h_PRSres 
+
+# mediator
+h_PRSres  ~ 0.5*m_h_PRSres 
+HEIGHT_res ~ a*h_PRSres 
+
+# indirect effects (i*a)
+ia := 0.5*a
+
+# total effects 
+total_mum := c + (0.5*a)
+
+'
+
+# Fit the model
+fitM <- sem(model, data=df, estimator='ML')
+
+sem_model <- summary(fitM, standardized=TRUE, fit.measures=TRUE, ci=TRUE)
+sem_model_df <- as.data.frame(sem_model$PE)
+sem_model_final <- sem_model_df[sem_model_df$label != "", c(1:4,6:7,9:11)] #here we are extracting values of interest e.g. est, se, p, ci
+simple_model <- cbind(sem_model_final, AIC(fitM))
+
+write.csv(simple_model, "height_prspc_pa_m1_matduo.csv", row.names=F, quote=F)
+
+################
+#EXTENDED MODEL#
+################
+
+# Define model
+
+model <- '
+
+#direct effects
+HEIGHT_res  ~ c*m_h_PRSres
+
+#mediator
+h_PRSres ~ 0.5*m_h_PRSres
+HEIGHT_res ~ a*h_PRSres
+m_HEIGHT_res ~ e*m_h_PRSres
+HEIGHT_res ~ g*m_HEIGHT_res
+
+# indirect effects (i*a, e*g)
+ia := 0.5*a
+eg := e*g
+
+
+# total effects 
+total_mum := c + (0.5*a) + (e*g) 
+
+# covariance
+
+'
+
+# Fit the model
+fitM <- sem(model, data=df, estimator='ML')
+sem_model <- summary(fitM, standardized=TRUE, fit.measures=TRUE, ci=TRUE)
+sem_model_df <- as.data.frame(sem_model$PE)
+sem_model_final <- sem_model_df[sem_model_df$label != "", c(1:4,6:7,9:11)] #here we are extracting values of interest e.g. est, se, p, ci
+extended_model <- cbind(sem_model_final, AIC(fitM))
+
+write.csv(extended_model, "height_prspc_pa_m2_matduo.csv", row.names=F, quote=F)
+
+```
+
+Paternal Duo:  
+
+```{r, eval=FALSE}
+rm(list=ls())
+library(lavaan)
+
+df <- read.csv("HEIGHT_pathwaymodel_df.csv", header=T)
+
+##############
+#SIMPLE MODEL#
+##############
+
+# Define model
+
+model <- ' 
+
+# direct effects
+HEIGHT_res ~ b*p_h_PRSres             
+
+# mediator
+h_PRSres ~ 0.5*p_h_PRSres
+HEIGHT_res ~ a*h_PRSres
+
+# indirect effects (h*a)
+ha := 0.5*a
+
+# total effects
+total_dad := b + (0.5*a)
+
+'
+
+# Fit the model
+fitM <- sem(model, data=df, estimator='ML')
+
+sem_model <- summary(fitM, standardized=TRUE, fit.measures=TRUE, ci=TRUE)
+sem_model_df <- as.data.frame(sem_model$PE)
+sem_model_final <- sem_model_df[sem_model_df$label != "", c(1:4,6:7,9:11)] #here we are extracting values of interest e.g. est, se, p, ci
+simple_model <- cbind(sem_model_final, AIC(fitM))
+
+write.csv(simple_model, "height_prspc_pa_m1_patduo.csv", row.names=F, quote=F)
+
+################
+#EXTENDED MODEL#
+################
+
+# Define model
+
+model <- '
+
+#direct effects
+HEIGHT_res ~ b*p_h_PRSres        
+
+#mediator
+h_PRSres ~ 0.5*p_h_PRSres 
+HEIGHT_res ~ a*h_PRSres
+p_HEIGHT_res ~ d*p_h_PRSres
+HEIGHT_res ~ f*p_HEIGHT_res
+
+# indirect effects (h*a, d*f)
+ha := 0.5*a
+df := d*f
+
+
+# total effects 
+total_dad := b + (0.5*a) + (d*f) 
+
+'
+
+# Fit the model
+fitM <- sem(model, data=df, estimator='ML')
+sem_model <- summary(fitM, standardized=TRUE, fit.measures=TRUE, ci=TRUE)
+sem_model_df <- as.data.frame(sem_model$PE)
+sem_model_final <- sem_model_df[sem_model_df$label != "", c(1:4,6:7,9:11)] #here we are extracting values of interest e.g. est, se, p, ci
+extended_model <- cbind(sem_model_final, AIC(fitM))
+
+write.csv(extended_model, "height_prspc_pa_m2_patduo.csv", row.names=F, quote=F)
+```
+
+## Educational Attainment  
+
+```{r, eval=FALSE}
+
+###############################################################
+#             Path h & i restricted to 0.5:  
+###############################################################
+
+rm(list=ls())
+library(lavaan)
+
+df <- read.csv("EA_pathwaymodel_df.csv", header=T)
+
+##############
+#SIMPLE MODEL#
+##############
+
+# Define model
+
+model <- ' 
+
+# direct effects
+EA_res ~ c*m_ea_PRSres
+EA_res ~ b*p_ea_PRSres
+           
+# mediator
+ea_PRSres ~ 0.5*m_ea_PRSres
+ea_PRSres ~ 0.5*p_ea_PRSres
+EA_res ~ a*ea_PRSres
+
+# indirect effects (i*a, h*a)
+ia := 0.5*a
+ha := 0.5*a
+
+# total effects 
+total_mum := c + (0.5*a)
+total_dad := b + (0.5*a)
+
+# covariance
+m_ea_PRSres ~~ p_ea_PRSres
+'
+
+# Fit the model
+fitM <- sem(model, data=df, estimator='ML')
+
+sem_model <- summary(fitM, standardized=TRUE, fit.measures=TRUE, ci=TRUE)
+sem_model_df <- as.data.frame(sem_model$PE)
+sem_model_final <- sem_model_df[sem_model_df$label != "", c(1:4,6:7,9:11)] #here we are extracting values of interest e.g. est, se, p, ci
+simple_model <- cbind(sem_model_final, AIC(fitM))
+
+write.csv(simple_model, "EA_prspc_pa_m1.csv", row.names=F, quote=F)
+
+
+################
+#EXTENDED MODEL#
+################
+
+# Define model
+
+model <- '
+
+#direct effects
+EA_res ~ c*m_ea_PRSres
+EA_res ~ b*p_ea_PRSres       
+
+#mediator
+ea_PRSres ~ 0.5*m_ea_PRSres
+ea_PRSres ~ 0.5*p_ea_PRSres 
+
+EA_res ~ a*ea_PRSres
+
+p_EA_res ~ d*p_ea_PRSres
+m_EA_res ~ e*m_ea_PRSres
+
+EA_res ~ f*p_EA_res
+EA_res ~ g*m_EA_res
+
+# indirect effects (i*a, h*a)
+ia := 0.5*a
+ha := 0.5*a
+df := d*f
+eg := e*g
+
+
+# total effects 
+total_mum := c + (0.5*a) + (e*g) 
+total_dad := b + (0.5*a) + (d*f) 
+
+# covariance
+m_ea_PRSres ~~ p_ea_PRSres
+m_EA_res ~~ p_EA_res
+
+'
+
+# Fit the model
+fitM <- sem(model, data=df, estimator='ML')
+sem_model <- summary(fitM, standardized=TRUE, fit.measures=TRUE, ci=TRUE)
+sem_model_df <- as.data.frame(sem_model$PE)
+sem_model_final <- sem_model_df[sem_model_df$label != "", c(1:4,6:7,9:11)] #here we are extracting values of interest e.g. est, se, p, ci
+extended_model <- cbind(sem_model_final, AIC(fitM))
+
+write.csv(extended_model, "EA_prspc_pa_m2.csv", row.names=F, quote=F)
+
+
+###############################################################
+#             Paths freely estimated 
+###############################################################
+
+rm(list=ls())
+library(lavaan)
+
+df <- read.csv("EA_pathwaymodel_df.csv", header=T)
+
+##############
+#SIMPLE MODEL#
+##############
+
+# Define model
+
+model <- ' 
+
+# direct effects
+EA_res ~ c*m_ea_PRSres
+EA_res ~ b*p_ea_PRSres
+           
+# mediator
+ea_PRSres ~ i*m_ea_PRSres
+ea_PRSres ~ h*p_ea_PRSres
+EA_res ~ a*ea_PRSres
+
+# indirect effects (i*a, h*a)
+ia := i*a
+ha := h*a
+
+# total effects 
+total_mum := c + (i*a)
+total_dad := b + (h*a)
+
+# covariance
+m_ea_PRSres ~~ p_ea_PRSres
+'
+
+# Fit the model
+fitM <- sem(model, data=df, estimator='ML')
+
+sem_model <- summary(fitM, standardized=TRUE, fit.measures=TRUE, ci=TRUE)
+sem_model_df <- as.data.frame(sem_model$PE)
+sem_model_final <- sem_model_df[sem_model_df$label != "", c(1:4,6:7,9:11)] #here we are extracting values of interest e.g. est, se, p, ci
+simple_model <- cbind(sem_model_final, AIC(fitM))
+
+write.csv(simple_model, "EA_prspc_pa_m1_fm.csv", row.names=F, quote=F)
+
+
+################
+#EXTENDED MODEL#
+################
+
+# Define model
+
+model <- '
+
+#direct effects
+EA_res ~ c*m_ea_PRSres
+EA_res ~ b*p_ea_PRSres       
+
+#mediator
+ea_PRSres ~ i*m_ea_PRSres
+ea_PRSres ~ h*p_ea_PRSres 
+
+EA_res ~ a*ea_PRSres
+
+p_EA_res ~ d*p_ea_PRSres
+m_EA_res ~ e*m_ea_PRSres
+
+EA_res ~ f*p_EA_res
+EA_res ~ g*m_EA_res
+
+# indirect effects (i*a, h*a)
+ia := i*a
+ha := h*a
+df := d*f
+eg := e*g
+
+
+# total effects 
+total_mum := c + (i*a) + (e*g) 
+total_dad := b + (h*a) + (d*f) 
+
+# covariance
+m_ea_PRSres ~~ p_ea_PRSres
+m_EA_res ~~ p_EA_res
+
+'
+
+# Fit the model
+fitM <- sem(model, data=df, estimator='ML')
+sem_model <- summary(fitM, standardized=TRUE, fit.measures=TRUE, ci=TRUE)
+sem_model_df <- as.data.frame(sem_model$PE)
+sem_model_final <- sem_model_df[sem_model_df$label != "", c(1:4,6:7,9:11)] #here we are extracting values of interest e.g. est, se, p, ci
+extended_model <- cbind(sem_model_final, AIC(fitM))
+
+write.csv(extended_model, "EA_prspc_pa_m2_fm.csv", row.names=F, quote=F)
+
+
+###############################################################
+#             female only results 
+###############################################################
+
+rm(list=ls())
+library(lavaan)
+
+df <- read.csv("EA_pathwaymodel_df.csv", header=T)
+df <- subset(df, df$SEX==2)
+
+##############
+#SIMPLE MODEL#
+##############
+
+# Define model
+
+model <- ' 
+
+# direct effects
+EA_res ~ c*m_ea_PRSres
+EA_res ~ b*p_ea_PRSres
+           
+# mediator
+ea_PRSres ~ 0.5*m_ea_PRSres
+ea_PRSres ~ 0.5*p_ea_PRSres
+EA_res ~ a*ea_PRSres
+
+# indirect effects (i*a, h*a)
+ia := 0.5*a
+ha := 0.5*a
+
+# total effects 
+total_mum := c + (0.5*a)
+total_dad := b + (0.5*a)
+
+# covariance
+m_ea_PRSres ~~ p_ea_PRSres
+'
+
+# Fit the model
+fitM <- sem(model, data=df, estimator='ML')
+
+sem_model <- summary(fitM, standardized=TRUE, fit.measures=TRUE, ci=TRUE)
+sem_model_df <- as.data.frame(sem_model$PE)
+sem_model_final <- sem_model_df[sem_model_df$label != "", c(1:4,6:7,9:11)] #here we are extracting values of interest e.g. est, se, p, ci
+simple_model <- cbind(sem_model_final, AIC(fitM))
+
+write.csv(simple_model, "EA_prspc_pa_m1_F.csv", row.names=F, quote=F)
+
+
+################
+#EXTENDED MODEL#
+################
+
+# Define model
+
+model <- '
+
+#direct effects
+EA_res ~ c*m_ea_PRSres
+EA_res ~ b*p_ea_PRSres       
+
+#mediator
+ea_PRSres ~ 0.5*m_ea_PRSres
+ea_PRSres ~ 0.5*p_ea_PRSres 
+
+EA_res ~ a*ea_PRSres
+
+p_EA_res ~ d*p_ea_PRSres
+m_EA_res ~ e*m_ea_PRSres
+
+EA_res ~ f*p_EA_res
+EA_res ~ g*m_EA_res
+
+# indirect effects (i*a, h*a)
+ia := 0.5*a
+ha := 0.5*a
+df := d*f
+eg := e*g
+
+
+# total effects 
+total_mum := c + (0.5*a) + (e*g) 
+total_dad := b + (0.5*a) + (d*f) 
+
+# covariance
+m_ea_PRSres ~~ p_ea_PRSres
+m_EA_res ~~ p_EA_res
+
+'
+
+# Fit the model
+fitM <- sem(model, data=df, estimator='ML')
+sem_model <- summary(fitM, standardized=TRUE, fit.measures=TRUE, ci=TRUE)
+sem_model_df <- as.data.frame(sem_model$PE)
+sem_model_final <- sem_model_df[sem_model_df$label != "", c(1:4,6:7,9:11)] #here we are extracting values of interest e.g. est, se, p, ci
+extended_model <- cbind(sem_model_final, AIC(fitM))
+
+write.csv(extended_model, "EA_prspc_pa_m2_F.csv", row.names=F, quote=F)
+
+
+###############################################################
+#             male only results 
+###############################################################
+
+rm(list=ls())
+library(lavaan)
+
+df <- read.csv("EA_pathwaymodel_df.csv", header=T)
+df <- subset(df, df$SEX==1)
+
+##############
+#SIMPLE MODEL#
+##############
+
+# Define model
+
+model <- ' 
+
+# direct effects
+EA_res ~ c*m_ea_PRSres
+EA_res ~ b*p_ea_PRSres
+           
+# mediator
+ea_PRSres ~ 0.5*m_ea_PRSres
+ea_PRSres ~ 0.5*p_ea_PRSres
+EA_res ~ a*ea_PRSres
+
+# indirect effects (i*a, h*a)
+ia := 0.5*a
+ha := 0.5*a
+
+# total effects 
+total_mum := c + (0.5*a)
+total_dad := b + (0.5*a)
+
+# covariance
+m_ea_PRSres ~~ p_ea_PRSres
+'
+
+# Fit the model
+fitM <- sem(model, data=df, estimator='ML')
+
+sem_model <- summary(fitM, standardized=TRUE, fit.measures=TRUE, ci=TRUE)
+sem_model_df <- as.data.frame(sem_model$PE)
+sem_model_final <- sem_model_df[sem_model_df$label != "", c(1:4,6:7,9:11)] #here we are extracting values of interest e.g. est, se, p, ci
+simple_model <- cbind(sem_model_final, AIC(fitM))
+
+write.csv(simple_model, "EA_prspc_pa_m1_M.csv", row.names=F, quote=F)
+
+
+################
+#EXTENDED MODEL#
+################
+
+# Define model
+
+model <- '
+
+#direct effects
+EA_res ~ c*m_ea_PRSres
+EA_res ~ b*p_ea_PRSres       
+
+#mediator
+ea_PRSres ~ 0.5*m_ea_PRSres
+ea_PRSres ~ 0.5*p_ea_PRSres 
+
+EA_res ~ a*ea_PRSres
+
+p_EA_res ~ d*p_ea_PRSres
+m_EA_res ~ e*m_ea_PRSres
+
+EA_res ~ f*p_EA_res
+EA_res ~ g*m_EA_res
+
+# indirect effects (i*a, h*a)
+ia := 0.5*a
+ha := 0.5*a
+df := d*f
+eg := e*g
+
+
+# total effects 
+total_mum := c + (0.5*a) + (e*g) 
+total_dad := b + (0.5*a) + (d*f) 
+
+# covariance
+m_ea_PRSres ~~ p_ea_PRSres
+m_EA_res ~~ p_EA_res
+
+'
+
+# Fit the model
+fitM <- sem(model, data=df, estimator='ML')
+sem_model <- summary(fitM, standardized=TRUE, fit.measures=TRUE, ci=TRUE)
+sem_model_df <- as.data.frame(sem_model$PE)
+sem_model_final <- sem_model_df[sem_model_df$label != "", c(1:4,6:7,9:11)] #here we are extracting values of interest e.g. est, se, p, ci
+extended_model <- cbind(sem_model_final, AIC(fitM))
+
+write.csv(extended_model, "EA_prspc_pa_m2_M.csv", row.names=F, quote=F)
+
+
+###############################################################
+#             singleton results 
+###############################################################
+
+rm(list=ls())
+library(lavaan)
+
+df <- read.csv("EA_pathwaymodel_df.csv", header=T)
+df <- df[!duplicated(df$sibID),]
+
+##############
+#SIMPLE MODEL#
+##############
+
+# Define model
+
+model <- ' 
+
+# direct effects
+EA_res ~ c*m_ea_PRSres
+EA_res ~ b*p_ea_PRSres
+           
+# mediator
+ea_PRSres ~ 0.5*m_ea_PRSres
+ea_PRSres ~ 0.5*p_ea_PRSres
+EA_res ~ a*ea_PRSres
+
+# indirect effects (i*a, h*a)
+ia := 0.5*a
+ha := 0.5*a
+
+# total effects 
+total_mum := c + (0.5*a)
+total_dad := b + (0.5*a)
+
+# covariance
+m_ea_PRSres ~~ p_ea_PRSres
+'
+
+# Fit the model
+fitM <- sem(model, data=df, estimator='ML')
+
+sem_model <- summary(fitM, standardized=TRUE, fit.measures=TRUE, ci=TRUE)
+sem_model_df <- as.data.frame(sem_model$PE)
+sem_model_final <- sem_model_df[sem_model_df$label != "", c(1:4,6:7,9:11)] #here we are extracting values of interest e.g. est, se, p, ci
+simple_model <- cbind(sem_model_final, AIC(fitM))
+
+write.csv(simple_model, "EA_prspc_pa_m1_single.csv", row.names=F, quote=F)
+
+
+################
+#EXTENDED MODEL#
+################
+
+# Define model
+
+model <- '
+
+#direct effects
+EA_res ~ c*m_ea_PRSres
+EA_res ~ b*p_ea_PRSres       
+
+#mediator
+ea_PRSres ~ 0.5*m_ea_PRSres
+ea_PRSres ~ 0.5*p_ea_PRSres 
+
+EA_res ~ a*ea_PRSres
+
+p_EA_res ~ d*p_ea_PRSres
+m_EA_res ~ e*m_ea_PRSres
+
+EA_res ~ f*p_EA_res
+EA_res ~ g*m_EA_res
+
+# indirect effects (i*a, h*a)
+ia := 0.5*a
+ha := 0.5*a
+df := d*f
+eg := e*g
+
+
+# total effects 
+total_mum := c + (0.5*a) + (e*g) 
+total_dad := b + (0.5*a) + (d*f) 
+
+# covariance
+m_ea_PRSres ~~ p_ea_PRSres
+m_EA_res ~~ p_EA_res
+
+'
+
+# Fit the model
+fitM <- sem(model, data=df, estimator='ML')
+sem_model <- summary(fitM, standardized=TRUE, fit.measures=TRUE, ci=TRUE)
+sem_model_df <- as.data.frame(sem_model$PE)
+sem_model_final <- sem_model_df[sem_model_df$label != "", c(1:4,6:7,9:11)] #here we are extracting values of interest e.g. est, se, p, ci
+extended_model <- cbind(sem_model_final, AIC(fitM))
+
+write.csv(extended_model, "EA_prspc_pa_m2_single.csv", row.names=F, quote=F)
+
+
+###############################################################
+#             maternal duo 
+###############################################################
+
+rm(list=ls())
+library(lavaan)
+
+df <- read.csv("EA_pathwaymodel_df.csv", header=T)
+
+##############
+#SIMPLE MODEL#
+##############
+
+# Define model
+
+model <- ' 
+
+# direct effects
+EA_res  ~ c*m_ea_PRSres 
+
+# mediator
+ea_PRSres  ~ 0.5*m_ea_PRSres 
+EA_res ~ a*ea_PRSres 
+
+# indirect effects (i*a)
+ab := 0.5*a
+
+# total effects 
+total_mum := c + (0.5*a)
+
+'
+
+# Fit the model
+fitM <- sem(model, data=df, estimator='ML')
+
+sem_model <- summary(fitM, standardized=TRUE, fit.measures=TRUE, ci=TRUE)
+sem_model_df <- as.data.frame(sem_model$PE)
+sem_model_final <- sem_model_df[sem_model_df$label != "", c(1:4,6:7,9:11)] #here we are extracting values of interest e.g. est, se, p, ci
+simple_model <- cbind(sem_model_final, AIC(fitM))
+
+write.csv(simple_model, "EA_prspc_pa_m1_matduo.csv", row.names=F, quote=F)
+
+################
+#EXTENDED MODEL#
+################
+
+# Define model
+
+model <- '
+
+#direct effects
+EA_res  ~ c*m_ea_PRSres
+
+#mediator
+ea_PRSres ~ 0.5*m_ea_PRSres
+EA_res ~ a*ea_PRSres
+m_EA_res ~ e*m_ea_PRSres
+EA_res ~ g*m_EA_res
+
+# indirect effects (i*a, e*g)
+ia := 0.5*a
+eg := e*g
+
+
+# total effects 
+total_mum := c + (0.5*a) + (e*g) 
+
+# covariance
+
+'
+
+# Fit the model
+fitM <- sem(model, data=df, estimator='ML')
+sem_model <- summary(fitM, standardized=TRUE, fit.measures=TRUE, ci=TRUE)
+sem_model_df <- as.data.frame(sem_model$PE)
+sem_model_final <- sem_model_df[sem_model_df$label != "", c(1:4,6:7,9:11)] #here we are extracting values of interest e.g. est, se, p, ci
+extended_model <- cbind(sem_model_final, AIC(fitM))
+
+write.csv(extended_model, "EA_prspc_pa_m2_matduo.csv", row.names=F, quote=F)
+
+
+###############################################################
+#             paternal duo 
+###############################################################
+
+
+rm(list=ls())
+library(lavaan)
+
+df <- read.csv("EA_pathwaymodel_df.csv", header=T)
+
+##############
+#SIMPLE MODEL#
+##############
+
+# Define model
+
+model <- ' 
+
+# direct effects
+EA_res ~ b*p_ea_PRSres             
+
+# mediator
+ea_PRSres ~ 0.5*p_ea_PRSres
+EA_res ~ a*ea_PRSres
+
+# indirect effects (h*a)
+ha := 0.5*a
+
+# total effects
+total_dad := b + (0.5*a)
+
+'
+
+# Fit the model
+fitM <- sem(model, data=df, estimator='ML')
+
+sem_model <- summary(fitM, standardized=TRUE, fit.measures=TRUE, ci=TRUE)
+sem_model_df <- as.data.frame(sem_model$PE)
+sem_model_final <- sem_model_df[sem_model_df$label != "", c(1:4,6:7,9:11)] #here we are extracting values of interest e.g. est, se, p, ci
+simple_model <- cbind(sem_model_final, AIC(fitM))
+
+write.csv(simple_model, "EA_prspc_pa_m1_patduo.csv", row.names=F, quote=F)
+
+################
+#EXTENDED MODEL#
+################
+
+# Define model
+
+model <- '
+
+#direct effects
+EA_res ~ b*p_ea_PRSres        
+
+#mediator
+ea_PRSres ~ 0.5*p_ea_PRSres 
+EA_res ~ a*ea_PRSres
+p_EA_res ~ d*p_ea_PRSres
+EA_res ~ f*p_EA_res
+
+# indirect effects (h*a, d*f)
+ha := 0.5*a
+df := d*f
+
+
+# total effects 
+total_dad := b + (0.5*a) + (d*f) 
+
+'
+
+# Fit the model
+fitM <- sem(model, data=df, estimator='ML')
+sem_model <- summary(fitM, standardized=TRUE, fit.measures=TRUE, ci=TRUE)
+sem_model_df <- as.data.frame(sem_model$PE)
+sem_model_final <- sem_model_df[sem_model_df$label != "", c(1:4,6:7,9:11)] #here we are extracting values of interest e.g. est, se, p, ci
+extended_model <- cbind(sem_model_final, AIC(fitM))
+
+write.csv(extended_model, "EA_prspc_pa_m2_patduo.csv", row.names=F, quote=F)
+
+```
+
+## Psychological Distress  
+
+```{r, eval=FALSE}
+###############################################################
+#             Path h & i restricted to 0.5:  
+###############################################################
+
+rm(list=ls())
+library(lavaan)
+
+df <- read.csv("GHQTotal_pathwaymodel_df.csv", header=T)
+
+##############
+#SIMPLE MODEL#
+##############
+
+# Define model
+
+model <- ' 
+
+# direct effects
+GHQTotal_res ~ c*m_dep_PRSres
+GHQTotal_res ~ b*p_dep_PRSres
+           
+# mediator
+dep_PRSres ~ 0.5*m_dep_PRSres
+dep_PRSres ~ 0.5*p_dep_PRSres
+GHQTotal_res ~ a*dep_PRSres
+
+# indirect effects (i*a, h*a)
+ia := 0.5*a
+ha := 0.5*a
+
+# total effects 
+total_mum := c + (0.5*a)
+total_dad := b + (0.5*a)
+
+# covariance
+m_dep_PRSres ~~ p_dep_PRSres
+'
+
+# Fit the model
+fitM <- sem(model, data=df, estimator='ML')
+
+sem_model <- summary(fitM, standardized=TRUE, fit.measures=TRUE, ci=TRUE)
+sem_model_df <- as.data.frame(sem_model$PE)
+sem_model_final <- sem_model_df[sem_model_df$label != "", c(1:4,6:7,9:11)] #here we are extracting values of interest e.g. est, se, p, ci
+simple_model <- cbind(sem_model_final, AIC(fitM))
+
+write.csv(simple_model, "GHQTotal_prspc_pa_m1.csv", row.names=F, quote=F)
+
+
+################
+#EXTENDED MODEL#
+################
+
+# Define model
+
+model <- '
+
+#direct effects
+GHQTotal_res ~ c*m_dep_PRSres
+GHQTotal_res ~ b*p_dep_PRSres       
+
+#mediator
+dep_PRSres ~ 0.5*m_dep_PRSres
+dep_PRSres ~ 0.5*p_dep_PRSres 
+
+GHQTotal_res ~ a*dep_PRSres
+
+p_GHQTotal_res ~ d*p_dep_PRSres
+m_GHQTotal_res ~ e*m_dep_PRSres
+
+GHQTotal_res ~ f*p_GHQTotal_res
+GHQTotal_res ~ g*m_GHQTotal_res
+
+# indirect effects (i*a, h*a)
+ia := 0.5*a
+ha := 0.5*a
+df := d*f
+eg := e*g
+
+
+# total effects 
+total_mum := c + (0.5*a) + (e*g) 
+total_dad := b + (0.5*a) + (d*f) 
+
+# covariance
+m_dep_PRSres ~~ p_dep_PRSres
+m_GHQTotal_res ~~ p_GHQTotal_res
+
+'
+
+# Fit the model
+fitM <- sem(model, data=df, estimator='ML')
+sem_model <- summary(fitM, standardized=TRUE, fit.measures=TRUE, ci=TRUE)
+sem_model_df <- as.data.frame(sem_model$PE)
+sem_model_final <- sem_model_df[sem_model_df$label != "", c(1:4,6:7,9:11)] #here we are extracting values of interest e.g. est, se, p, ci
+extended_model <- cbind(sem_model_final, AIC(fitM))
+
+write.csv(extended_model, "GHQTotal_prspc_pa_m2.csv", row.names=F, quote=F)
+
+
+###############################################################
+#             Paths freely estimated 
+###############################################################
+
+rm(list=ls())
+library(lavaan)
+
+df <- read.csv("GHQTotal_pathwaymodel_df.csv", header=T)
+
+##############
+#SIMPLE MODEL#
+##############
+
+# Define model
+
+model <- ' 
+
+# direct effects
+GHQTotal_res ~ c*m_dep_PRSres
+GHQTotal_res ~ b*p_dep_PRSres
+           
+# mediator
+dep_PRSres ~ i*m_dep_PRSres
+dep_PRSres ~ h*p_dep_PRSres
+GHQTotal_res ~ a*dep_PRSres
+
+# indirect effects (i*a, h*a)
+ia := i*a
+ha := h*a
+
+# total effects 
+total_mum := c + (i*a)
+total_dad := b + (h*a)
+
+# covariance
+m_dep_PRSres ~~ p_dep_PRSres
+'
+
+# Fit the model
+fitM <- sem(model, data=df, estimator='ML')
+
+sem_model <- summary(fitM, standardized=TRUE, fit.measures=TRUE, ci=TRUE)
+sem_model_df <- as.data.frame(sem_model$PE)
+sem_model_final <- sem_model_df[sem_model_df$label != "", c(1:4,6:7,9:11)] #here we are extracting values of interest e.g. est, se, p, ci
+simple_model <- cbind(sem_model_final, AIC(fitM))
+
+write.csv(simple_model, "GHQTotal_prspc_pa_m1_fm.csv", row.names=F, quote=F)
+
+
+################
+#EXTENDED MODEL#
+################
+
+# Define model
+
+model <- '
+
+#direct effects
+GHQTotal_res ~ c*m_dep_PRSres
+GHQTotal_res ~ b*p_dep_PRSres       
+
+#mediator
+dep_PRSres ~ i*m_dep_PRSres
+dep_PRSres ~ h*p_dep_PRSres 
+
+GHQTotal_res ~ a*dep_PRSres
+
+p_GHQTotal_res ~ d*p_dep_PRSres
+m_GHQTotal_res ~ e*m_dep_PRSres
+
+GHQTotal_res ~ f*p_GHQTotal_res
+GHQTotal_res ~ g*m_GHQTotal_res
+
+# indirect effects (i*a, h*a)
+ia := i*a
+ha := h*a
+df := d*f
+eg := e*g
+
+
+# total effects 
+total_mum := c + (i*a) + (e*g) 
+total_dad := b + (h*a) + (d*f) 
+
+# covariance
+m_dep_PRSres ~~ p_dep_PRSres
+m_GHQTotal_res ~~ p_GHQTotal_res
+
+'
+
+# Fit the model
+fitM <- sem(model, data=df, estimator='ML')
+sem_model <- summary(fitM, standardized=TRUE, fit.measures=TRUE, ci=TRUE)
+sem_model_df <- as.data.frame(sem_model$PE)
+sem_model_final <- sem_model_df[sem_model_df$label != "", c(1:4,6:7,9:11)] #here we are extracting values of interest e.g. est, se, p, ci
+extended_model <- cbind(sem_model_final, AIC(fitM))
+
+write.csv(extended_model, "GHQTotal_prspc_pa_m2_fm.csv", row.names=F, quote=F)
+
+
+###############################################################
+#             female only results 
+###############################################################
+
+rm(list=ls())
+library(lavaan)
+
+df <- read.csv("GHQTotal_pathwaymodel_df.csv", header=T)
+df <- subset(df, df$SEX==2)
+
+##############
+#SIMPLE MODEL#
+##############
+
+# Define model
+
+model <- ' 
+
+# direct effects
+GHQTotal_res ~ c*m_dep_PRSres
+GHQTotal_res ~ b*p_dep_PRSres
+           
+# mediator
+dep_PRSres ~ 0.5*m_dep_PRSres
+dep_PRSres ~ 0.5*p_dep_PRSres
+GHQTotal_res ~ a*dep_PRSres
+
+# indirect effects (i*a, h*a)
+ia := 0.5*a
+ha := 0.5*a
+
+# total effects 
+total_mum := c + (0.5*a)
+total_dad := b + (0.5*a)
+
+# covariance
+m_dep_PRSres ~~ p_dep_PRSres
+'
+
+# Fit the model
+fitM <- sem(model, data=df, estimator='ML')
+
+sem_model <- summary(fitM, standardized=TRUE, fit.measures=TRUE, ci=TRUE)
+sem_model_df <- as.data.frame(sem_model$PE)
+sem_model_final <- sem_model_df[sem_model_df$label != "", c(1:4,6:7,9:11)] #here we are extracting values of interest e.g. est, se, p, ci
+simple_model <- cbind(sem_model_final, AIC(fitM))
+
+write.csv(simple_model, "GHQTotal_prspc_pa_m1_F.csv", row.names=F, quote=F)
+
+
+################
+#EXTENDED MODEL#
+################
+
+# Define model
+
+model <- '
+
+#direct effects
+GHQTotal_res ~ c*m_dep_PRSres
+GHQTotal_res ~ b*p_dep_PRSres       
+
+#mediator
+dep_PRSres ~ 0.5*m_dep_PRSres
+dep_PRSres ~ 0.5*p_dep_PRSres 
+
+GHQTotal_res ~ a*dep_PRSres
+
+p_GHQTotal_res ~ d*p_dep_PRSres
+m_GHQTotal_res ~ e*m_dep_PRSres
+
+GHQTotal_res ~ f*p_GHQTotal_res
+GHQTotal_res ~ g*m_GHQTotal_res
+
+# indirect effects (i*a, h*a)
+ia := 0.5*a
+ha := 0.5*a
+df := d*f
+eg := e*g
+
+
+# total effects 
+total_mum := c + (0.5*a) + (e*g) 
+total_dad := b + (0.5*a) + (d*f) 
+
+# covariance
+m_dep_PRSres ~~ p_dep_PRSres
+m_GHQTotal_res ~~ p_GHQTotal_res
+
+'
+
+# Fit the model
+fitM <- sem(model, data=df, estimator='ML')
+sem_model <- summary(fitM, standardized=TRUE, fit.measures=TRUE, ci=TRUE)
+sem_model_df <- as.data.frame(sem_model$PE)
+sem_model_final <- sem_model_df[sem_model_df$label != "", c(1:4,6:7,9:11)] #here we are extracting values of interest e.g. est, se, p, ci
+extended_model <- cbind(sem_model_final, AIC(fitM))
+
+write.csv(extended_model, "GHQTotal_prspc_pa_m2_F.csv", row.names=F, quote=F)
+
+
+###############################################################
+#             male only results 
+###############################################################
+
+rm(list=ls())
+library(lavaan)
+
+df <- read.csv("GHQTotal_pathwaymodel_df.csv", header=T)
+df <- subset(df, df$SEX==1)
+
+##############
+#SIMPLE MODEL#
+##############
+
+# Define model
+
+model <- ' 
+
+# direct effects
+GHQTotal_res ~ c*m_dep_PRSres
+GHQTotal_res ~ b*p_dep_PRSres
+           
+# mediator
+dep_PRSres ~ 0.5*m_dep_PRSres
+dep_PRSres ~ 0.5*p_dep_PRSres
+GHQTotal_res ~ a*dep_PRSres
+
+# indirect effects (i*a, h*a)
+ia := 0.5*a
+ha := 0.5*a
+
+# total effects 
+total_mum := c + (0.5*a)
+total_dad := b + (0.5*a)
+
+# covariance
+m_dep_PRSres ~~ p_dep_PRSres
+'
+
+# Fit the model
+fitM <- sem(model, data=df, estimator='ML')
+
+sem_model <- summary(fitM, standardized=TRUE, fit.measures=TRUE, ci=TRUE)
+sem_model_df <- as.data.frame(sem_model$PE)
+sem_model_final <- sem_model_df[sem_model_df$label != "", c(1:4,6:7,9:11)] #here we are extracting values of interest e.g. est, se, p, ci
+simple_model <- cbind(sem_model_final, AIC(fitM))
+
+write.csv(simple_model, "GHQTotal_prspc_pa_m1_M.csv", row.names=F, quote=F)
+
+
+################
+#EXTENDED MODEL#
+################
+
+# Define model
+
+model <- '
+
+#direct effects
+GHQTotal_res ~ c*m_dep_PRSres
+GHQTotal_res ~ b*p_dep_PRSres       
+
+#mediator
+dep_PRSres ~ 0.5*m_dep_PRSres
+dep_PRSres ~ 0.5*p_dep_PRSres 
+
+GHQTotal_res ~ a*dep_PRSres
+
+p_GHQTotal_res ~ d*p_dep_PRSres
+m_GHQTotal_res ~ e*m_dep_PRSres
+
+GHQTotal_res ~ f*p_GHQTotal_res
+GHQTotal_res ~ g*m_GHQTotal_res
+
+# indirect effects (i*a, h*a)
+ia := 0.5*a
+ha := 0.5*a
+df := d*f
+eg := e*g
+
+
+# total effects 
+total_mum := c + (0.5*a) + (e*g) 
+total_dad := b + (0.5*a) + (d*f) 
+
+# covariance
+m_dep_PRSres ~~ p_dep_PRSres
+m_GHQTotal_res ~~ p_GHQTotal_res
+
+'
+
+# Fit the model
+fitM <- sem(model, data=df, estimator='ML')
+sem_model <- summary(fitM, standardized=TRUE, fit.measures=TRUE, ci=TRUE)
+sem_model_df <- as.data.frame(sem_model$PE)
+sem_model_final <- sem_model_df[sem_model_df$label != "", c(1:4,6:7,9:11)] #here we are extracting values of interest e.g. est, se, p, ci
+extended_model <- cbind(sem_model_final, AIC(fitM))
+
+write.csv(extended_model, "GHQTotal_prspc_pa_m2_M.csv", row.names=F, quote=F)
+
+
+###############################################################
+#             singleton results 
+###############################################################
+
+rm(list=ls())
+library(lavaan)
+
+df <- read.csv("GHQTotal_pathwaymodel_df.csv", header=T)
+df <- df[!duplicated(df$sibID),]
+
+##############
+#SIMPLE MODEL#
+##############
+
+# Define model
+
+model <- ' 
+
+# direct effects
+GHQTotal_res ~ c*m_dep_PRSres
+GHQTotal_res ~ b*p_dep_PRSres
+           
+# mediator
+dep_PRSres ~ 0.5*m_dep_PRSres
+dep_PRSres ~ 0.5*p_dep_PRSres
+GHQTotal_res ~ a*dep_PRSres
+
+# indirect effects (i*a, h*a)
+ia := 0.5*a
+ha := 0.5*a
+
+# total effects 
+total_mum := c + (0.5*a)
+total_dad := b + (0.5*a)
+
+# covariance
+m_dep_PRSres ~~ p_dep_PRSres
+'
+
+# Fit the model
+fitM <- sem(model, data=df, estimator='ML')
+
+sem_model <- summary(fitM, standardized=TRUE, fit.measures=TRUE, ci=TRUE)
+sem_model_df <- as.data.frame(sem_model$PE)
+sem_model_final <- sem_model_df[sem_model_df$label != "", c(1:4,6:7,9:11)] #here we are extracting values of interest e.g. est, se, p, ci
+simple_model <- cbind(sem_model_final, AIC(fitM))
+
+write.csv(simple_model, "GHQTotal_prspc_pa_m1_single.csv", row.names=F, quote=F)
+
+
+################
+#EXTENDED MODEL#
+################
+
+# Define model
+
+model <- '
+
+#direct effects
+GHQTotal_res ~ c*m_dep_PRSres
+GHQTotal_res ~ b*p_dep_PRSres       
+
+#mediator
+dep_PRSres ~ 0.5*m_dep_PRSres
+dep_PRSres ~ 0.5*p_dep_PRSres 
+
+GHQTotal_res ~ a*dep_PRSres
+
+p_GHQTotal_res ~ d*p_dep_PRSres
+m_GHQTotal_res ~ e*m_dep_PRSres
+
+GHQTotal_res ~ f*p_GHQTotal_res
+GHQTotal_res ~ g*m_GHQTotal_res
+
+# indirect effects (i*a, h*a)
+ia := 0.5*a
+ha := 0.5*a
+df := d*f
+eg := e*g
+
+
+# total effects 
+total_mum := c + (0.5*a) + (e*g) 
+total_dad := b + (0.5*a) + (d*f) 
+
+# covariance
+m_dep_PRSres ~~ p_dep_PRSres
+m_GHQTotal_res ~~ p_GHQTotal_res
+
+'
+
+# Fit the model
+fitM <- sem(model, data=df, estimator='ML')
+sem_model <- summary(fitM, standardized=TRUE, fit.measures=TRUE, ci=TRUE)
+sem_model_df <- as.data.frame(sem_model$PE)
+sem_model_final <- sem_model_df[sem_model_df$label != "", c(1:4,6:7,9:11)] #here we are extracting values of interest e.g. est, se, p, ci
+extended_model <- cbind(sem_model_final, AIC(fitM))
+
+write.csv(extended_model, "GHQTotal_prspc_pa_m2_single.csv", row.names=F, quote=F)
+
+
+###############################################################
+#             maternal duo 
+###############################################################
+
+rm(list=ls())
+library(lavaan)
+
+df <- read.csv("GHQTotal_pathwaymodel_df.csv", header=T)
+
+##############
+#SIMPLE MODEL#
+##############
+
+# Define model
+
+model <- ' 
+
+# direct effects
+GHQTotal_res  ~ c*m_dep_PRSres 
+
+# mediator
+dep_PRSres  ~ 0.5*m_dep_PRSres 
+GHQTotal_res ~ a*dep_PRSres 
+
+# indirect effects (i*a)
+ab := 0.5*a
+
+# total effects 
+total_mum := c + (0.5*a)
+
+'
+
+# Fit the model
+fitM <- sem(model, data=df, estimator='ML')
+
+sem_model <- summary(fitM, standardized=TRUE, fit.measures=TRUE, ci=TRUE)
+sem_model_df <- as.data.frame(sem_model$PE)
+sem_model_final <- sem_model_df[sem_model_df$label != "", c(1:4,6:7,9:11)] #here we are extracting values of interest e.g. est, se, p, ci
+simple_model <- cbind(sem_model_final, AIC(fitM))
+
+write.csv(simple_model, "GHQTotal_prspc_pa_m1_matduo.csv", row.names=F, quote=F)
+
+################
+#EXTENDED MODEL#
+################
+
+# Define model
+
+model <- '
+
+#direct effects
+GHQTotal_res  ~ c*m_dep_PRSres
+
+#mediator
+dep_PRSres ~ 0.5*m_dep_PRSres
+GHQTotal_res ~ a*dep_PRSres
+m_GHQTotal_res ~ e*m_dep_PRSres
+GHQTotal_res ~ g*m_GHQTotal_res
+
+# indirect effects (i*a, e*g)
+ia := 0.5*a
+eg := e*g
+
+
+# total effects 
+total_mum := c + (0.5*a) + (e*g) 
+
+# covariance
+
+'
+
+# Fit the model
+fitM <- sem(model, data=df, estimator='ML')
+sem_model <- summary(fitM, standardized=TRUE, fit.measures=TRUE, ci=TRUE)
+sem_model_df <- as.data.frame(sem_model$PE)
+sem_model_final <- sem_model_df[sem_model_df$label != "", c(1:4,6:7,9:11)] #here we are extracting values of interest e.g. est, se, p, ci
+extended_model <- cbind(sem_model_final, AIC(fitM))
+
+write.csv(extended_model, "GHQTotal_prspc_pa_m2_matduo.csv", row.names=F, quote=F)
+
+
+###############################################################
+#             paternal duo 
+###############################################################
+
+
+rm(list=ls())
+library(lavaan)
+
+df <- read.csv("GHQTotal_pathwaymodel_df.csv", header=T)
+
+##############
+#SIMPLE MODEL#
+##############
+
+# Define model
+
+model <- ' 
+
+# direct effects
+GHQTotal_res ~ b*p_dep_PRSres             
+
+# mediator
+dep_PRSres ~ 0.5*p_dep_PRSres
+GHQTotal_res ~ a*dep_PRSres
+
+# indirect effects (h*a)
+ha := 0.5*a
+
+# total effects
+total_dad := b + (0.5*a)
+
+'
+
+# Fit the model
+fitM <- sem(model, data=df, estimator='ML')
+
+sem_model <- summary(fitM, standardized=TRUE, fit.measures=TRUE, ci=TRUE)
+sem_model_df <- as.data.frame(sem_model$PE)
+sem_model_final <- sem_model_df[sem_model_df$label != "", c(1:4,6:7,9:11)] #here we are extracting values of interest e.g. est, se, p, ci
+simple_model <- cbind(sem_model_final, AIC(fitM))
+
+write.csv(simple_model, "GHQTotal_prspc_pa_m1_patduo.csv", row.names=F, quote=F)
+
+################
+#EXTENDED MODEL#
+################
+
+# Define model
+
+model <- '
+
+#direct effects
+GHQTotal_res ~ b*p_dep_PRSres        
+
+#mediator
+dep_PRSres ~ 0.5*p_dep_PRSres 
+GHQTotal_res ~ a*dep_PRSres
+p_GHQTotal_res ~ d*p_dep_PRSres
+GHQTotal_res ~ f*p_GHQTotal_res
+
+# indirect effects (h*a, d*f)
+ha := 0.5*a
+df := d*f
+
+
+# total effects 
+total_dad := b + (0.5*a) + (d*f) 
+
+'
+
+# Fit the model
+fitM <- sem(model, data=df, estimator='ML')
+sem_model <- summary(fitM, standardized=TRUE, fit.measures=TRUE, ci=TRUE)
+sem_model_df <- as.data.frame(sem_model$PE)
+sem_model_final <- sem_model_df[sem_model_df$label != "", c(1:4,6:7,9:11)] #here we are extracting values of interest e.g. est, se, p, ci
+extended_model <- cbind(sem_model_final, AIC(fitM))
+
+write.csv(extended_model, "GHQTotal_prspc_pa_m2_patduo.csv", row.names=F, quote=F)
+```
+
+## Depression  
+
+```{r, eval=FALSE}
+###############################################################
+#             Path h & i restricted to 0.5:  
+###############################################################
+
+rm(list=ls())
+library(lavaan)
+
+df <- read.csv("GHQDepression_pathwaymodel_df.csv", header=T)
+
+##############
+#SIMPLE MODEL#
+##############
+
+# Define model
+
+model <- ' 
+
+# direct effects
+GHQDepression_res ~ c*m_dep_PRSres
+GHQDepression_res ~ b*p_dep_PRSres
+           
+# mediator
+dep_PRSres ~ 0.5*m_dep_PRSres
+dep_PRSres ~ 0.5*p_dep_PRSres
+GHQDepression_res ~ a*dep_PRSres
+
+# indirect effects (i*a, h*a)
+ia := 0.5*a
+ha := 0.5*a
+
+# total effects 
+total_mum := c + (0.5*a)
+total_dad := b + (0.5*a)
+
+# covariance
+m_dep_PRSres ~~ p_dep_PRSres
+'
+
+# Fit the model
+fitM <- sem(model, data=df, estimator='ML')
+
+sem_model <- summary(fitM, standardized=TRUE, fit.measures=TRUE, ci=TRUE)
+sem_model_df <- as.data.frame(sem_model$PE)
+sem_model_final <- sem_model_df[sem_model_df$label != "", c(1:4,6:7,9:11)] #here we are extracting values of interest e.g. est, se, p, ci
+simple_model <- cbind(sem_model_final, AIC(fitM))
+
+write.csv(simple_model, "GHQDepression_prspc_pa_m1.csv", row.names=F, quote=F)
+
+
+################
+#EXTENDED MODEL#
+################
+
+# Define model
+
+model <- '
+
+#direct effects
+GHQDepression_res ~ c*m_dep_PRSres
+GHQDepression_res ~ b*p_dep_PRSres       
+
+#mediator
+dep_PRSres ~ 0.5*m_dep_PRSres
+dep_PRSres ~ 0.5*p_dep_PRSres 
+
+GHQDepression_res ~ a*dep_PRSres
+
+p_GHQDepression_res ~ d*p_dep_PRSres
+m_GHQDepression_res ~ e*m_dep_PRSres
+
+GHQDepression_res ~ f*p_GHQDepression_res
+GHQDepression_res ~ g*m_GHQDepression_res
+
+# indirect effects (i*a, h*a)
+ia := 0.5*a
+ha := 0.5*a
+df := d*f
+eg := e*g
+
+
+# total effects 
+total_mum := c + (0.5*a) + (e*g) 
+total_dad := b + (0.5*a) + (d*f) 
+
+# covariance
+m_dep_PRSres ~~ p_dep_PRSres
+m_GHQDepression_res ~~ p_GHQDepression_res
+
+'
+
+# Fit the model
+fitM <- sem(model, data=df, estimator='ML')
+sem_model <- summary(fitM, standardized=TRUE, fit.measures=TRUE, ci=TRUE)
+sem_model_df <- as.data.frame(sem_model$PE)
+sem_model_final <- sem_model_df[sem_model_df$label != "", c(1:4,6:7,9:11)] #here we are extracting values of interest e.g. est, se, p, ci
+extended_model <- cbind(sem_model_final, AIC(fitM))
+
+write.csv(extended_model, "GHQDepression_prspc_pa_m2.csv", row.names=F, quote=F)
+
+
+###############################################################
+#             Paths freely estimated 
+###############################################################
+
+rm(list=ls())
+library(lavaan)
+
+df <- read.csv("GHQDepression_pathwaymodel_df.csv", header=T)
+
+##############
+#SIMPLE MODEL#
+##############
+
+# Define model
+
+model <- ' 
+
+# direct effects
+GHQDepression_res ~ c*m_dep_PRSres
+GHQDepression_res ~ b*p_dep_PRSres
+           
+# mediator
+dep_PRSres ~ i*m_dep_PRSres
+dep_PRSres ~ h*p_dep_PRSres
+GHQDepression_res ~ a*dep_PRSres
+
+# indirect effects (i*a, h*a)
+ia := i*a
+ha := h*a
+
+# total effects 
+total_mum := c + (i*a)
+total_dad := b + (h*a)
+
+# covariance
+m_dep_PRSres ~~ p_dep_PRSres
+'
+
+# Fit the model
+fitM <- sem(model, data=df, estimator='ML')
+
+sem_model <- summary(fitM, standardized=TRUE, fit.measures=TRUE, ci=TRUE)
+sem_model_df <- as.data.frame(sem_model$PE)
+sem_model_final <- sem_model_df[sem_model_df$label != "", c(1:4,6:7,9:11)] #here we are extracting values of interest e.g. est, se, p, ci
+simple_model <- cbind(sem_model_final, AIC(fitM))
+
+write.csv(simple_model, "GHQDepression_prspc_pa_m1_fm.csv", row.names=F, quote=F)
+
+
+################
+#EXTENDED MODEL#
+################
+
+# Define model
+
+model <- '
+
+#direct effects
+GHQDepression_res ~ c*m_dep_PRSres
+GHQDepression_res ~ b*p_dep_PRSres       
+
+#mediator
+dep_PRSres ~ i*m_dep_PRSres
+dep_PRSres ~ h*p_dep_PRSres 
+
+GHQDepression_res ~ a*dep_PRSres
+
+p_GHQDepression_res ~ d*p_dep_PRSres
+m_GHQDepression_res ~ e*m_dep_PRSres
+
+GHQDepression_res ~ f*p_GHQDepression_res
+GHQDepression_res ~ g*m_GHQDepression_res
+
+# indirect effects (i*a, h*a)
+ia := i*a
+ha := h*a
+df := d*f
+eg := e*g
+
+
+# total effects 
+total_mum := c + (i*a) + (e*g) 
+total_dad := b + (h*a) + (d*f) 
+
+# covariance
+m_dep_PRSres ~~ p_dep_PRSres
+m_GHQDepression_res ~~ p_GHQDepression_res
+
+'
+
+# Fit the model
+fitM <- sem(model, data=df, estimator='ML')
+sem_model <- summary(fitM, standardized=TRUE, fit.measures=TRUE, ci=TRUE)
+sem_model_df <- as.data.frame(sem_model$PE)
+sem_model_final <- sem_model_df[sem_model_df$label != "", c(1:4,6:7,9:11)] #here we are extracting values of interest e.g. est, se, p, ci
+extended_model <- cbind(sem_model_final, AIC(fitM))
+
+write.csv(extended_model, "GHQDepression_prspc_pa_m2_fm.csv", row.names=F, quote=F)
+
+
+###############################################################
+#             female only results 
+###############################################################
+
+rm(list=ls())
+library(lavaan)
+
+df <- read.csv("GHQDepression_pathwaymodel_df.csv", header=T)
+df <- subset(df, df$SEX==2)
+
+##############
+#SIMPLE MODEL#
+##############
+
+# Define model
+
+model <- ' 
+
+# direct effects
+GHQDepression_res ~ c*m_dep_PRSres
+GHQDepression_res ~ b*p_dep_PRSres
+           
+# mediator
+dep_PRSres ~ 0.5*m_dep_PRSres
+dep_PRSres ~ 0.5*p_dep_PRSres
+GHQDepression_res ~ a*dep_PRSres
+
+# indirect effects (i*a, h*a)
+ia := 0.5*a
+ha := 0.5*a
+
+# total effects 
+total_mum := c + (0.5*a)
+total_dad := b + (0.5*a)
+
+# covariance
+m_dep_PRSres ~~ p_dep_PRSres
+'
+
+# Fit the model
+fitM <- sem(model, data=df, estimator='ML')
+
+sem_model <- summary(fitM, standardized=TRUE, fit.measures=TRUE, ci=TRUE)
+sem_model_df <- as.data.frame(sem_model$PE)
+sem_model_final <- sem_model_df[sem_model_df$label != "", c(1:4,6:7,9:11)] #here we are extracting values of interest e.g. est, se, p, ci
+simple_model <- cbind(sem_model_final, AIC(fitM))
+
+write.csv(simple_model, "GHQDepression_prspc_pa_m1_F.csv", row.names=F, quote=F)
+
+
+################
+#EXTENDED MODEL#
+################
+
+# Define model
+
+model <- '
+
+#direct effects
+GHQDepression_res ~ c*m_dep_PRSres
+GHQDepression_res ~ b*p_dep_PRSres       
+
+#mediator
+dep_PRSres ~ 0.5*m_dep_PRSres
+dep_PRSres ~ 0.5*p_dep_PRSres 
+
+GHQDepression_res ~ a*dep_PRSres
+
+p_GHQDepression_res ~ d*p_dep_PRSres
+m_GHQDepression_res ~ e*m_dep_PRSres
+
+GHQDepression_res ~ f*p_GHQDepression_res
+GHQDepression_res ~ g*m_GHQDepression_res
+
+# indirect effects (i*a, h*a)
+ia := 0.5*a
+ha := 0.5*a
+df := d*f
+eg := e*g
+
+
+# total effects 
+total_mum := c + (0.5*a) + (e*g) 
+total_dad := b + (0.5*a) + (d*f) 
+
+# covariance
+m_dep_PRSres ~~ p_dep_PRSres
+m_GHQDepression_res ~~ p_GHQDepression_res
+
+'
+
+# Fit the model
+fitM <- sem(model, data=df, estimator='ML')
+sem_model <- summary(fitM, standardized=TRUE, fit.measures=TRUE, ci=TRUE)
+sem_model_df <- as.data.frame(sem_model$PE)
+sem_model_final <- sem_model_df[sem_model_df$label != "", c(1:4,6:7,9:11)] #here we are extracting values of interest e.g. est, se, p, ci
+extended_model <- cbind(sem_model_final, AIC(fitM))
+
+write.csv(extended_model, "GHQDepression_prspc_pa_m2_F.csv", row.names=F, quote=F)
+
+
+###############################################################
+#             male only results 
+###############################################################
+
+rm(list=ls())
+library(lavaan)
+
+df <- read.csv("GHQDepression_pathwaymodel_df.csv", header=T)
+df <- subset(df, df$SEX==1)
+
+##############
+#SIMPLE MODEL#
+##############
+
+# Define model
+
+model <- ' 
+
+# direct effects
+GHQDepression_res ~ c*m_dep_PRSres
+GHQDepression_res ~ b*p_dep_PRSres
+           
+# mediator
+dep_PRSres ~ 0.5*m_dep_PRSres
+dep_PRSres ~ 0.5*p_dep_PRSres
+GHQDepression_res ~ a*dep_PRSres
+
+# indirect effects (i*a, h*a)
+ia := 0.5*a
+ha := 0.5*a
+
+# total effects 
+total_mum := c + (0.5*a)
+total_dad := b + (0.5*a)
+
+# covariance
+m_dep_PRSres ~~ p_dep_PRSres
+'
+
+# Fit the model
+fitM <- sem(model, data=df, estimator='ML')
+
+sem_model <- summary(fitM, standardized=TRUE, fit.measures=TRUE, ci=TRUE)
+sem_model_df <- as.data.frame(sem_model$PE)
+sem_model_final <- sem_model_df[sem_model_df$label != "", c(1:4,6:7,9:11)] #here we are extracting values of interest e.g. est, se, p, ci
+simple_model <- cbind(sem_model_final, AIC(fitM))
+
+write.csv(simple_model, "GHQDepression_prspc_pa_m1_M.csv", row.names=F, quote=F)
+
+
+################
+#EXTENDED MODEL#
+################
+
+# Define model
+
+model <- '
+
+#direct effects
+GHQDepression_res ~ c*m_dep_PRSres
+GHQDepression_res ~ b*p_dep_PRSres       
+
+#mediator
+dep_PRSres ~ 0.5*m_dep_PRSres
+dep_PRSres ~ 0.5*p_dep_PRSres 
+
+GHQDepression_res ~ a*dep_PRSres
+
+p_GHQDepression_res ~ d*p_dep_PRSres
+m_GHQDepression_res ~ e*m_dep_PRSres
+
+GHQDepression_res ~ f*p_GHQDepression_res
+GHQDepression_res ~ g*m_GHQDepression_res
+
+# indirect effects (i*a, h*a)
+ia := 0.5*a
+ha := 0.5*a
+df := d*f
+eg := e*g
+
+
+# total effects 
+total_mum := c + (0.5*a) + (e*g) 
+total_dad := b + (0.5*a) + (d*f) 
+
+# covariance
+m_dep_PRSres ~~ p_dep_PRSres
+m_GHQDepression_res ~~ p_GHQDepression_res
+
+'
+
+# Fit the model
+fitM <- sem(model, data=df, estimator='ML')
+sem_model <- summary(fitM, standardized=TRUE, fit.measures=TRUE, ci=TRUE)
+sem_model_df <- as.data.frame(sem_model$PE)
+sem_model_final <- sem_model_df[sem_model_df$label != "", c(1:4,6:7,9:11)] #here we are extracting values of interest e.g. est, se, p, ci
+extended_model <- cbind(sem_model_final, AIC(fitM))
+
+write.csv(extended_model, "GHQDepression_prspc_pa_m2_M.csv", row.names=F, quote=F)
+
+
+###############################################################
+#             singleton results 
+###############################################################
+
+rm(list=ls())
+library(lavaan)
+
+df <- read.csv("GHQDepression_pathwaymodel_df.csv", header=T)
+df <- df[!duplicated(df$sibID),]
+
+##############
+#SIMPLE MODEL#
+##############
+
+# Define model
+
+model <- ' 
+
+# direct effects
+GHQDepression_res ~ c*m_dep_PRSres
+GHQDepression_res ~ b*p_dep_PRSres
+           
+# mediator
+dep_PRSres ~ 0.5*m_dep_PRSres
+dep_PRSres ~ 0.5*p_dep_PRSres
+GHQDepression_res ~ a*dep_PRSres
+
+# indirect effects (i*a, h*a)
+ia := 0.5*a
+ha := 0.5*a
+
+# total effects 
+total_mum := c + (0.5*a)
+total_dad := b + (0.5*a)
+
+# covariance
+m_dep_PRSres ~~ p_dep_PRSres
+'
+
+# Fit the model
+fitM <- sem(model, data=df, estimator='ML')
+
+sem_model <- summary(fitM, standardized=TRUE, fit.measures=TRUE, ci=TRUE)
+sem_model_df <- as.data.frame(sem_model$PE)
+sem_model_final <- sem_model_df[sem_model_df$label != "", c(1:4,6:7,9:11)] #here we are extracting values of interest e.g. est, se, p, ci
+simple_model <- cbind(sem_model_final, AIC(fitM))
+
+write.csv(simple_model, "GHQDepression_prspc_pa_m1_single.csv", row.names=F, quote=F)
+
+
+################
+#EXTENDED MODEL#
+################
+
+# Define model
+
+model <- '
+
+#direct effects
+GHQDepression_res ~ c*m_dep_PRSres
+GHQDepression_res ~ b*p_dep_PRSres       
+
+#mediator
+dep_PRSres ~ 0.5*m_dep_PRSres
+dep_PRSres ~ 0.5*p_dep_PRSres 
+
+GHQDepression_res ~ a*dep_PRSres
+
+p_GHQDepression_res ~ d*p_dep_PRSres
+m_GHQDepression_res ~ e*m_dep_PRSres
+
+GHQDepression_res ~ f*p_GHQDepression_res
+GHQDepression_res ~ g*m_GHQDepression_res
+
+# indirect effects (i*a, h*a)
+ia := 0.5*a
+ha := 0.5*a
+df := d*f
+eg := e*g
+
+
+# total effects 
+total_mum := c + (0.5*a) + (e*g) 
+total_dad := b + (0.5*a) + (d*f) 
+
+# covariance
+m_dep_PRSres ~~ p_dep_PRSres
+m_GHQDepression_res ~~ p_GHQDepression_res
+
+'
+
+# Fit the model
+fitM <- sem(model, data=df, estimator='ML')
+sem_model <- summary(fitM, standardized=TRUE, fit.measures=TRUE, ci=TRUE)
+sem_model_df <- as.data.frame(sem_model$PE)
+sem_model_final <- sem_model_df[sem_model_df$label != "", c(1:4,6:7,9:11)] #here we are extracting values of interest e.g. est, se, p, ci
+extended_model <- cbind(sem_model_final, AIC(fitM))
+
+write.csv(extended_model, "GHQDepression_prspc_pa_m2_single.csv", row.names=F, quote=F)
+
+
+###############################################################
+#             maternal duo 
+###############################################################
+
+rm(list=ls())
+library(lavaan)
+
+df <- read.csv("GHQDepression_pathwaymodel_df.csv", header=T)
+
+##############
+#SIMPLE MODEL#
+##############
+
+# Define model
+
+model <- ' 
+
+# direct effects
+GHQDepression_res  ~ c*m_dep_PRSres 
+
+# mediator
+dep_PRSres  ~ 0.5*m_dep_PRSres 
+GHQDepression_res ~ a*dep_PRSres 
+
+# indirect effects (i*a)
+ab := 0.5*a
+
+# total effects 
+total_mum := c + (0.5*a)
+
+'
+
+# Fit the model
+fitM <- sem(model, data=df, estimator='ML')
+
+sem_model <- summary(fitM, standardized=TRUE, fit.measures=TRUE, ci=TRUE)
+sem_model_df <- as.data.frame(sem_model$PE)
+sem_model_final <- sem_model_df[sem_model_df$label != "", c(1:4,6:7,9:11)] #here we are extracting values of interest e.g. est, se, p, ci
+simple_model <- cbind(sem_model_final, AIC(fitM))
+
+write.csv(simple_model, "GHQDepression_prspc_pa_m1_matduo.csv", row.names=F, quote=F)
+
+################
+#EXTENDED MODEL#
+################
+
+# Define model
+
+model <- '
+
+#direct effects
+GHQDepression_res  ~ c*m_dep_PRSres
+
+#mediator
+dep_PRSres ~ 0.5*m_dep_PRSres
+GHQDepression_res ~ a*dep_PRSres
+m_GHQDepression_res ~ e*m_dep_PRSres
+GHQDepression_res ~ g*m_GHQDepression_res
+
+# indirect effects (i*a, e*g)
+ia := 0.5*a
+eg := e*g
+
+
+# total effects 
+total_mum := c + (0.5*a) + (e*g) 
+
+# covariance
+
+'
+
+# Fit the model
+fitM <- sem(model, data=df, estimator='ML')
+sem_model <- summary(fitM, standardized=TRUE, fit.measures=TRUE, ci=TRUE)
+sem_model_df <- as.data.frame(sem_model$PE)
+sem_model_final <- sem_model_df[sem_model_df$label != "", c(1:4,6:7,9:11)] #here we are extracting values of interest e.g. est, se, p, ci
+extended_model <- cbind(sem_model_final, AIC(fitM))
+
+write.csv(extended_model, "GHQDepression_prspc_pa_m2_matduo.csv", row.names=F, quote=F)
+
+
+###############################################################
+#             paternal duo 
+###############################################################
+
+
+rm(list=ls())
+library(lavaan)
+
+df <- read.csv("GHQDepression_pathwaymodel_df.csv", header=T)
+
+##############
+#SIMPLE MODEL#
+##############
+
+# Define model
+
+model <- ' 
+
+# direct effects
+GHQDepression_res ~ b*p_dep_PRSres             
+
+# mediator
+dep_PRSres ~ 0.5*p_dep_PRSres
+GHQDepression_res ~ a*dep_PRSres
+
+# indirect effects (h*a)
+ha := 0.5*a
+
+# total effects
+total_dad := b + (0.5*a)
+
+'
+
+# Fit the model
+fitM <- sem(model, data=df, estimator='ML')
+
+sem_model <- summary(fitM, standardized=TRUE, fit.measures=TRUE, ci=TRUE)
+sem_model_df <- as.data.frame(sem_model$PE)
+sem_model_final <- sem_model_df[sem_model_df$label != "", c(1:4,6:7,9:11)] #here we are extracting values of interest e.g. est, se, p, ci
+simple_model <- cbind(sem_model_final, AIC(fitM))
+
+write.csv(simple_model, "GHQDepression_prspc_pa_m1_patduo.csv", row.names=F, quote=F)
+
+################
+#EXTENDED MODEL#
+################
+
+# Define model
+
+model <- '
+
+#direct effects
+GHQDepression_res ~ b*p_dep_PRSres        
+
+#mediator
+dep_PRSres ~ 0.5*p_dep_PRSres 
+GHQDepression_res ~ a*dep_PRSres
+p_GHQDepression_res ~ d*p_dep_PRSres
+GHQDepression_res ~ f*p_GHQDepression_res
+
+# indirect effects (h*a, d*f)
+ha := 0.5*a
+df := d*f
+
+
+# total effects 
+total_dad := b + (0.5*a) + (d*f) 
+
+'
+
+# Fit the model
+fitM <- sem(model, data=df, estimator='ML')
+sem_model <- summary(fitM, standardized=TRUE, fit.measures=TRUE, ci=TRUE)
+sem_model_df <- as.data.frame(sem_model$PE)
+sem_model_final <- sem_model_df[sem_model_df$label != "", c(1:4,6:7,9:11)] #here we are extracting values of interest e.g. est, se, p, ci
+extended_model <- cbind(sem_model_final, AIC(fitM))
+
+write.csv(extended_model, "GHQDepression_prspc_pa_m2_patduo.csv", row.names=F, quote=F)
+```
+
+
