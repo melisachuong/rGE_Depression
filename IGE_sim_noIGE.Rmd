@@ -39,38 +39,44 @@ Different scenarios, with 15 replications each, were conducted with a range of p
 
 First I will write a function to create the dataframes which will be named *cohort*. Separate dataframes for each specified scenario will be created with 15 replications.  
 
-```{r, eval=FALSE}
+```{r data_sim}
 
   ##########################################################################
   #1. Coding a function that returns the simulated variables in a dataframe#
   ##########################################################################
   
+  RNGkind("L'Ecuyer-CMRG")
   set.seed(14) #14 is my lucky number
 
-  sim <- function(h2, tagged, prs_noise){
+  sim <- function(h2, tagged, prs_noise, cor_AM) {
   
   V_P <- 1 #phenotypic variance is = 1
-  V_A <- h2*V_P #the heritability is equal to the additive genetic variance
-  V_Tagged <- tagged*V_A #the value of tagged should be SNP heritability i.e. the proportion of the genetic variance that is actually tagged by measured variants
-  V_nTagged <- V_A - V_Tagged
-  V_E <- (1-h2)*V_P #the environmental variance
+  cov_AM <- cor_AM * V_P # parental phenotypic covariance from assortative mating
+  Sigma_P <- matrix(c(V_P, cov_AM, cov_AM, V_P), nrow = 2) # parental phenotypic covariance
+  Sigma_A <- h2*Sigma_P #the heritability is equal to the additive genetic variance
+  Sigma_Tagged <- tagged*Sigma_A #the value of tagged should be SNP heritability i.e. the proportion of the genetic variance that is actually tagged by measured variants
+  Sigma_nTagged <- Sigma_A - Sigma_Tagged
+  Sigma_E <- (1-h2)*Sigma_P #the environmental variance
   n <- 10000 # simulating 10,000 trios
   
   #Creating a parental genetic variables that captures ALL tagged genetic variance
-  maternal_genetic_tagged = rnorm(n, mean=0, sqrt(V_Tagged))
-  paternal_genetic_tagged = rnorm(n, mean=0, sqrt(V_Tagged))
+  parental_genetic_tagged = MASS::mvrnorm(n, mu=c(0, 0), Sigma = Sigma_Tagged)
+  maternal_genetic_tagged = parental_genetic_tagged[,1]
+  paternal_genetic_tagged = parental_genetic_tagged[,2]
   
   #Creating a parental genetic variable that captures ALL non-tagged genetic variance 
-  maternal_genetic_ntagged = rnorm(n, mean=0, sqrt(V_nTagged))
-  paternal_genetic_ntagged = rnorm(n, mean=0, sqrt(V_nTagged))
+  parental_genetic_ntagged = MASS::mvrnorm(n, mu=c(0, 0), Sigma = Sigma_nTagged)
+  maternal_genetic_ntagged = parental_genetic_ntagged[,1]
+  paternal_genetic_ntagged = parental_genetic_ntagged[,2]
   
   #Creating a parental genetic variables that is the sum of the tagged and non-tagged genetic variance
   maternal_genetic = maternal_genetic_tagged + maternal_genetic_ntagged
   paternal_genetic = paternal_genetic_tagged + paternal_genetic_ntagged
   
   #Creating parental environmental variables that capture the environmental variance
-  maternal_environment = rnorm(n, mean=0, sd = sqrt(V_E))
-  paternal_environment = rnorm(n, mean=0, sd = sqrt(V_E))
+  parental_environment = MASS::mvrnorm(n, mu=c(0, 0), Sigma = Sigma_E)
+  maternal_environment = parental_environment[,1]
+  paternal_environment = parental_environment[,2]
   
   #Creating parental phenotypic variables that is made up of both genetic and environmental variance
   maternal_phenotype = maternal_genetic + maternal_environment
@@ -78,8 +84,8 @@ First I will write a function to create the dataframes which will be named *coho
   
   #offspring segregation is generated to capture noise that occurs from genetic segregation
   #separate segregation terms are generated using tagged and non-tagged genetic variance
-  offspring_segregation_tagged = rnorm(n, 0, sd=sqrt(V_Tagged/2))
-  offspring_segregation_ntagged = rnorm(n, 0, sd=sqrt(V_nTagged/2))
+  offspring_segregation_tagged = rnorm(n, 0, sd=sqrt(Sigma_Tagged[1,1]/2))
+  offspring_segregation_ntagged = rnorm(n, 0, sd=sqrt(Sigma_nTagged[1,1]/2))
   
   #separate offspring genetic counterparts are created using tagged and non-tagged genetic variance (including segregation variance) from each parent
   offspring_genetic_tagged = (maternal_genetic_tagged + paternal_genetic_tagged)/2 + offspring_segregation_tagged
@@ -89,7 +95,7 @@ First I will write a function to create the dataframes which will be named *coho
   offspring_genetic = offspring_genetic_tagged + offspring_genetic_ntagged
   
   #offspring environmental variable made up of environmental variance
-  offspring_environment <- rnorm(n, mean=0, sd = sqrt(V_E))
+  offspring_environment <- rnorm(n, mean=0, sd = sqrt(Sigma_E[1,1]))
   
   #offspring phenotypic variable is the sum of the offspring genetic and environmental variables 
   offspring_phenotype <- offspring_genetic + offspring_environment
@@ -100,12 +106,15 @@ First I will write a function to create the dataframes which will be named *coho
   #2) the estimates of the variant effect on the phenotype may not be accurate i.e. GWAS are still quite underpowered - we capture this with our varying V_noise parameter
   #Remember that the PRSs are purely derived from tagged genetic variance 
   V_noise = prs_noise
+  Sigma_noise <- matrix(c(V_noise, cor_AM * V_noise,
+                          cor_AM * V_noise, V_noise), nrow = 2) # parental noise covariance
   
   #Creating parental PRSs where PRSs are derived of parental tagged genetic variables + noise derived using the noise variance variable created in the previous step
-  maternal_noise = rnorm(n, 0, sd=sqrt(V_noise))
-  maternal_prs = maternal_genetic_tagged + maternal_noise
+  parental_noise <- MASS::mvrnorm(n, mu = c(0, 0), Sigma = Sigma_noise)
+  maternal_noise = parental_noise[,1]
+  paternal_noise = parental_noise[,2]
   
-  paternal_noise = rnorm(n, 0, sd=sqrt(V_noise)) 
+  maternal_prs = maternal_genetic_tagged + maternal_noise
   paternal_prs = paternal_genetic_tagged + paternal_noise 
   
   
@@ -119,200 +128,51 @@ First I will write a function to create the dataframes which will be named *coho
                        offspring_genetic, offspring_environment, offspring_phenotype, offspring_prs)
   return(cohort)}
 
-  ########################################################
-  #2. Save a dataframe for each scenario with 15 replicas#
-  ######################################################## 
-
-  for(replica in 1:15){
-    for(h2 in c(0.3, 0.6, 0.9)){
-      for(tagged in c(0.2, 0.6, 1)){
-        for(prs_noise in seq(0,1,by=0.1)){
-        
-  cohort <- sim(h2, tagged, prs_noise)
-  cohort$replica <- replica
-  cohort$h2 <- h2
-  cohort$tagged <- tagged
-  cohort$prs_noise <- prs_noise
-  
-  write.table(cohort, file= paste0("cohort_h2", h2 , "_tagged", tagged, "_prs_noise", prs_noise), row.name=F, quote=F, col.names=F, append=T)
-  }}}}
-
 ```
 
-We expect 3x3x11 cohort files with 15,000 rows (15 replicas of 10,000) and 12 columns.  
-
-Can check number of outputted rows using ``` tree  <directory name> ```  
-
-Can count the rows of each file in the directory using ``` wc -l * ```
 
 ## ANALYSES USING SIMULATED DATASETS {.tabset}  
 
-### Parallel Processing  
-
-Making use of parallel processing in this case will ensure efficiency in compute time. 
-
-For this process, a file of all potential combinations of the varying parameters (h2, tagged, prs_noise) need to be combined in a text file, where each row represents a scenario (e.g. 0.3, 0.2, 0)
-
-```{r, eval=FALSE}
-
-parameters <- c()
-
-for(h2 in c(0.3, 0.6, 0.9)){
- for(tagged in c(0.2, 0.6, 1)){
-   for(prs_noise in seq(0,1, by=0.1)){
-   
-     a <- c(h2, tagged, prs_noise)
-     parameters <- rbind(parameters,a)
-     
-     }}}
-               
-write.table(parameters, "sim_no_IGE_parameters.txt", row.names=F, quote=F, col.names=F)
-#this file will be used to specify the different datasets saved
-
-```
-
-Array job script
-
-```
-#!/bin/sh
-###########################################
-
-# M.Chuong, Edinburgh U.K, February 2021
-# Eddie Indirect Genetic Effects Project Simulation Analysis
-
-#$ -N sim_pa
-#$ -t 1-99
-#$ -tc 20
-#$ -cwd
-#$ -e e_o_outputs # place to save .e* error outputs
-#$ -o e_o_outputs # place to save .o* error outputs
-#$ -pe sharedmem 1 # number of cores
-#$ -l h_vmem=2G # memory per core
-#$ -l h_rt=24:00:00 ## requested time
-#$ -m n ## notifications: (b)begin/(a)aborted/(e)end/(s)suspended/(n)nomail
-#$ -M melisa.chuong@ed.ac.uk ## email for notifications
-
-
-# INITIALISE ENV MODULES
-. /etc/profile.d/modules.sh # if using modules need to add this line
-
-# LOAD THE MODULES
-module load igmm/apps/R/3.6.1
-
-parameter_file=sim_noIGE_parameters.txt
-line=`sed -n -e "${SGE_TASK_ID} p" ${parameter_file}`
-parameters=($line)
-
-h2=${parameters[0]}
-tagged=${parameters[1]}
-prs_noise=${parameters[2]}
-
-Rscript sim_noIGE_pathway.R/sim_noIGE_regression.R $h2 $tagged $prs_noise
-
-```
-When running the array job what is happening is that each 'cohort' dataframe is identified using the parameters text file, and the following regression/pathway analyses are conducted. The array job allows for several cohort dataframes to run through the analyses simultaneously - as the actual regression/pathway analyses are identical.  
-
-It is important that the results of each of these analyses are saved *separately* rather than appended to the same output file, even though this outputs a shitload of files (that can cause severe anxiety). Some analyses may fail and then the appended file will be all weird/ some analyses may complete at the same time (not common - BUT IT DOES HAPPEN, IT HAPPENED TO ME) and file format can corrupt as 2 output lines are being appended to the same row.  
-
-So creating separate output files and then row binding them will work better (save yourself the tears).  
-
 ### Regression Simulations  
 
-Save following as sim_noIGE_regression.R  
-```{r, eval=FALSE}
-
-#!/usr/bin/env Rscript
-args = commandArgs(trailingOnly=TRUE)
-
-h2 <- as.numeric(args[1])
-tagged <- as.numeric(args[2])
-prs_noise <- as.numeric(args[3])
-
-sym= c()
-
-df <- read.table(paste0("cohort_h2", h2, "_tagged", tagged, "_prs_noise", prs_noise), header=F)
-
-colnames(df) <- c("maternal_genetic", "maternal_environment","maternal_phenotype",
-                  "maternal_prs", "paternal_genetic",
-                  "paternal_environment","paternal_phenotype", "paternal_prs",
-                  "offspring_genetic","offspring_environment","offspring_phenotype",
-                  "offspring_prs", "replica", "h2", "tagged", "prs_noise")
-
-for(replica in 1:15){
-
-cohort <- df[df$replica==replica,]
-
-      regression <- summary(lm(offspring_phenotype ~ offspring_prs + maternal_prs + paternal_prs + maternal_phenotype + paternal_phenotype , data=cohort))
-      reginfo <-  cbind(regression$coefficients, regression$adj.r.squared, prs_noise, replica, h2, tagged)  
-      sym <- rbind(sym,reginfo) 
-      }
-
-write.csv(sym, paste0("sim_outcome_trioprs_parentpheno_h2", h2, "_tagged", tagged, "_prsnoise", prs_noise, ".csv"), row.names=F, quote=F)
-
+```{r sim_regression}
+sim_regression <- function(cohort) {
+    regression <- summary(lm(offspring_phenotype ~ offspring_prs + maternal_prs + paternal_prs + maternal_phenotype + paternal_phenotype , data=cohort))
+    return(regression[c('coefficients', 'adj.r.squared')])
+}
+ # colnames(final) <- c("Predictor", "Estimate", "SE", "T-value", "P-value", "AdjR2", "prs_noise", "replica", "h2", "Tagged")
+ # write.table(final, "sim_noIGE_trioprs_parentpheno.txt", col.names=F, row.names=F, quote=F, append=T) 
 ```
-
-Row bind all result output files
-
-```{r, eval=FALSE}
-
-      final <- as.data.frame(matrix(NA, nrow=1, ncol=10))
-      colnames(final) <- c("Predictor", "Estimate", "SE", "T-value", "P-value", "AdjR2", "prs_noise", "replica", "h2", "Tagged")
-      
-      for(h2 in c(0.3, 0.6, 0.9)){
-      for(tagged in c(0.2, 0.6, 1)){
-      for(prs_noise in seq(0,1,by=0.1)){
-        
-      df <- read.csv(paste0("sim_outcome_trioprs_parentpheno_h2", h2, "_tagged", tagged, "_prsnoise", prs_noise, ".csv"), header=T)
-      colnames(df) <- c("Predictor", "Estimate", "SE", "T-value", "P-value", "AdjR2", "prs_noise", "replica", "h2", "Tagged")
-      final <- rbind(final, df)
-      
-      }}}
-
-      write.table(final, "sim_noIGE_trioprs_parentpheno.txt", col.names=F, row.names=F, quote=F, append=T)   
-
-```
-
 
 ### Pathway Model Simulations  
 
-Save following as sim_noIGE_pathway.R
-```{r, eval=FALSE}
-#!/usr/bin/env Rscript
-args = commandArgs(trailingOnly=TRUE)
-
-h2 <- as.numeric(args[1])
-tagged <- as.numeric(args[2])
-prs_noise <- as.numeric(args[3])
+```{r sim_path}
 
 library(lavaan)
 
-sim_simple <- c()
-sim_extended <- c()
-sim_res_extended <- c()
-
-df <- read.table(paste0("cohort_h2", h2, "_tagged", tagged, "_prs_noise", prs_noise), header=F)
-
-colnames(df) <- c("maternal_genetic", "maternal_environment","maternal_phenotype",
-                  "maternal_prs", "paternal_genetic",
-                  "paternal_environment","paternal_phenotype", "paternal_prs",
-                  "offspring_genetic","offspring_environment","offspring_phenotype",
-                  "offspring_prs", "replica", "h2", "tagged", "prs_noise")
-
-for(replica in 1:15){
-
-cohort <- df[df$replica==replica,]
+sim_path <- function(model, cohort) {
+  fitM <- sem(model, data=cohort, estimator='ML')
   
+  sem_model <- summary(fitM, standardized=TRUE, fit.measures=TRUE, ci=TRUE)
+  
+  return(list(pe = sem_model$pe, AIC = AIC(fitM)))
+  # sem_model_df <- as.matrix(sem_model$pe)
+  # sem_model_final <- sem_model_df[sem_model_df[,4] != "", c(1,3:4,6,7,9:11)]
+  # simple_model <- cbind(sem_model_final, AIC(fitM), replica, cohort$h2, cohort$tagged, cohort$prs_noise)
+  # colnames(final) <- c("DV", "IV", "label", "Estimate", "SE", "P-value", "lowerCI", "upperCI", "AIC", "replica", "h2", "Tagged", "prs_noise")
+}
+
       ##############
       #SIMPLE MODEL#
       ##############
         
       # Define model
-        
-      model <- ' 
+      
+      simple_model <- ' 
       
       #direct effects
       offspring_phenotype ~ c*maternal_prs
-      offspring_phenotype ~ f*paternal_prs            
+      offspring_phenotype ~ b*paternal_prs            
       
       #mediator
       offspring_prs ~ i*maternal_prs
@@ -327,17 +187,6 @@ cohort <- df[df$replica==replica,]
       total_mum := c + (i*a)
       total_dad := b + (h*a)
       '
-        
-      # Fit the model
-      fitM <- sem(model, data=cohort, estimator='ML')
-      
-      sem_model <- summary(fitM, standardized=TRUE, fit.measures=TRUE, ci=TRUE)
-      sem_model_df <- as.matrix(sem_model$PE)
-      sem_model_final <- sem_model_df[sem_model_df[,4] != "", c(1,3:4,6,7,9:11)]
-      simple_model <- cbind(sem_model_final, AIC(fitM), replica, cohort$h2, cohort$tagged, cohort$prs_noise)
-      
-      sim_simple <- rbind(sim_simple, simple_model)
-      
       
       ################
       #EXTENDED MODEL#
@@ -345,7 +194,7 @@ cohort <- df[df$replica==replica,]
         
       # Define model
         
-      model <- '
+      extended_model <- '
 
       #direct effects
       offspring_phenotype ~ c*maternal_prs
@@ -374,249 +223,270 @@ cohort <- df[df$replica==replica,]
       maternal_prs ~~ paternal_prs
       maternal_phenotype ~~ paternal_phenotype
       '
-    
-      # Fit the model
-      fitM <- sem(model, data=cohort, estimator='ML')
-      sem_model <- summary(fitM, standardized=TRUE, fit.measures=TRUE, ci=TRUE)
-      sem_model_df <- as.matrix(sem_model$PE)
-      sem_model_final <- sem_model_df[sem_model_df[,4] != "", c(1,3:4,6,7,9:11)]
-      extended_model <- cbind(sem_model_final, AIC(fitM), replica, h2, tagged, prs_noise)
-    
-      sim_extended <- rbind(sim_extended, extended_model)
-      
+
  
-write.csv(sim_simple, paste0("sim_pa_noIGE_m1_h2", h2, "_tagged", tagged, "_prsnoise", prs_noise, ".csv"), row.names=T, quote=F)
-write.csv(sim_extended, paste0("sim_pa_noIGE_m2_h2", h2, "_tagged", tagged, "_prsnoise", prs_noise, ".csv"), row.names=T, quote=F)
+# write.csv(sim_simple, paste0("sim_pa_noIGE_m1_h2", h2, "_tagged", tagged, "_prsnoise", prs_noise, ".csv"), row.names=T, quote=F)
+# write.csv(sim_extended, paste0("sim_pa_noIGE_m2_h2", h2, "_tagged", tagged, "_prsnoise", prs_noise, ".csv"), row.names=T, quote=F)
 
 ```
 
-Row bind all result output files
+## Simulations
 
-```{r, eval=FALSE}
+### Parameter combinations
+```{r params}
+h2_params <- c(0.3, 0.6, 0.9)
+tagged_params <- c(0.2, 0.6, 1)
+prs_noise_params <- seq(0, 1, by = 0.1)
+am_params <- seq(0, 0.2, by = 0.05)
 
-      #SIMPLE MODEL 
+params <- expand.grid(h2_params, tagged_params, prs_noise_params, am_params)
+names(params) <- c("h2", "tagged", "prs_noise", "cor_AM")
+params_list <- plyr::alply(params, 1, I)
+```
 
-      final <- as.data.frame(matrix(NA, nrow=1, ncol=13))
-      colnames(final) <- c("DV", "IV", "label", "Estimate", "SE", "P-value", "lowerCI", "upperCI", "AIC", "replica", "h2", "Tagged", "prs_noise")
-      
-      for(h2 in c(0.3, 0.6, 0.9)){
-      for(tagged in c(0.2, 0.6, 1)){
-      for(prs_noise in seq(0,1,by=0.1)){
-        
-      df <- read.csv(paste0("sim_pa_noIGE_m1_h2", h2, "_tagged", tagged, "_prsnoise", prs_noise, ".csv"), header=T)
-      colnames(df) <- c("DV", "IV", "label", "Estimate", "SE", "P-value", "lowerCI", "upperCI", "AIC", "replica", "h2", "Tagged", "prs_noise")
-                       
-      final <- rbind(final, df)
-      
-      }}}
+### Simulate replicate datasets
+```{r simulation, cache=TRUE}
+replicates <- 100
+model_sims <- parallel::mclapply(params_list, function(param) {
+  sims <- list()
+  for(i in 1:replicates) {
+    cohort <- sim(param$h2, param$tagged, param$prs_noise, param$cor_AM)
+    regression_result <- sim_regression(cohort)
+    sem_simple_result <- sim_path(simple_model, cohort)
+    sem_extended_result <- sim_path(extended_model, cohort)
+    sims[[i]] <- list(replica = i,
+                      params = param,
+                      regression = regression_result,
+                      sem_simple = sem_simple_result,
+                      sem_extended = sem_extended_result)
+  }
+  return(sims)
+},
+mc.cores = 8)
+```
 
-      write.table(final, "sim_pa_noIGE_m1.txt", col.names=F, row.names=F, quote=F, append=T)   
-      
-      #EXTENDED MODEL
-      
-      final <- as.data.frame(matrix(NA, nrow=1, ncol=13))
-      colnames(final) <- c("DV", "IV", "label", "Estimate", "SE", "P-value", "lowerCI", "upperCI", "AIC", "replica", "h2", "Tagged", "prs_noise")
-      
-      for(h2 in c(0.3, 0.6, 0.9)){
-      for(tagged in c(0.2, 0.6, 1)){
-      for(prs_noise in seq(0,1,by=0.1)){
-        
-      df <- read.csv(paste0("sim_pa_noIGE_m2_h2", h2, "_tagged", tagged, "_prsnoise", prs_noise, ".csv"), header=T)
-      colnames(df) <- c("DV", "IV", "label", "Estimate", "SE", "P-value", "lowerCI", "upperCI", "AIC", "replica", "h2", "Tagged", "prs_noise")
-                       
-      final <- rbind(final, df)
-      
-      }}}
+Results tables
+```{r results_tables, cache=TRUE}
+library(dplyr)
 
-      write.table(final, "sim_pa_noIGE_m2.txt", col.names=F, row.names=F, quote=F, append=T) 
-      
+model_sims_list <-  unlist(model_sims, recursive = FALSE)
+
+sim_regression_results <- bind_rows(
+  lapply(model_sims_list, function(sims) {
+    coefs <- as_tibble(sims$regression$coefficients, rownames = "term") |>
+      mutate(replicate = sims$replica)
+    return(bind_cols(coefs, sims$params))
+  })
+) |>
+rename(Predictor = term, SE = `Std. Error`,
+       `T-value` = `t value`, `P-value` = `Pr(>|t|)`,
+       Tagged = tagged) |>
+mutate(across(h2:cor_AM, as.character))
+
+sim_r2_results <- bind_rows(
+  lapply(model_sims_list, function(sims) {
+    mutate(sims$params, AdjR2 = sims$regression$adj.r.squared)
+  })) |>
+  rename(Tagged = tagged) |>
+  mutate(across(h2:cor_AM, as.character))
+  
+sim_pathway_results <- bind_rows(
+  lapply(model_sims_list, function(sims) {
+    bind_rows(mutate(sims$sem_simple$pe, model = "simple"),
+              mutate(sims$sem_extended$pe, model = "extended")) |>
+    mutate(replicate = sims$replica) |>
+    bind_cols(sims$params)
+  })) |>
+  select(DV = lhs, IV = rhs, label, Estimate = est, SE = se, `P-value` = pvalue,
+         lowerCI = ci.lower, upperCI = ci.upper, model, replicate,
+         h2, Tagged = tagged, prs_noise, cor_AM) |>
+  mutate(across(h2:cor_AM, as.character))
+
 ```
 
 ## RESULT PLOTS  
 
-**Regression Plots**
+### Regression Plots
 
-```{r, eval=FALSE}
+```{r sim_noIGE_oprs}
 library(ggplot2)
-
-df <- read.table("sim_noIGE_trioprs_parentpheno.txt", header=F)
-colnames(df) <- c("Predictor", "Estimate", "SE", "T-value", "P-value", "AdjR2", "prs_noise", "replica", "h2", "Tagged")
-df <- df[-1,]
-
-df$h2 <- as.factor(df$h2)
-df$Tagged <- as.factor(df$Tagged)
-df$prs_noise <- as.factor(df$prs_noise)
 
 #offspring pgs estimates
 
-df2 <- df[df$Predictor=="offspring_prs",]
+df2 <- sim_regression_results |>
+  filter(Predictor == "offspring_prs", cor_AM == "0")
 
-#png(file="sim_noIGE_oprs.png")
 
 image1 <- ggplot(data=df2, aes(x= prs_noise, y=Estimate, fill=Tagged)) +
   geom_boxplot(outlier.size=0) +
   scale_y_continuous(limits=c(0,1.1), breaks=seq(0.1,1, 0.1), expand = c(0, 0)) +
-  xlab("Poylgenic Score (PGS) Noise") + 
+  xlab("Polygenic Score (PGS) Noise") + 
   ylab("Offspring Pheno ~ Offspring PGS (Beta Estimate)") +
-  facet_wrap(~h2) +
+  facet_grid(~h2) +
   theme(axis.text = element_text(size=10), strip.text = element_text(size=10), axis.title=element_text(size=10,face="bold")) +
   ggtitle("Extended Regression Model Offspring PGS Beta Estimate ") +
   scale_fill_manual(values = c("pink", "lightblue", "red"))
-
+  
 image1
-#dev.off()
+```
 
+```{r sim_noIGE_mprs}
 
 #maternal pgs estimates
 
-df2 <- df[df$Predictor=="maternal_prs",]
-
-#png(file="sim_noIGE_mprs.png")
+df2 <- sim_regression_results |>
+  filter(Predictor == "maternal_prs", cor_AM == "0")
 
 image2 <- ggplot(data=df2, aes(x= prs_noise, y=Estimate, fill=Tagged)) +
   geom_boxplot(outlier.size=0) +
   scale_y_continuous(limits=c(-0.5,0.5), breaks=seq(-0.5,0.5, 0.1), expand = c(0, 0)) +
-  xlab("Poylgenic Score (PGS) Noise") + 
+  xlab("Polygenic Score (PGS) Noise") + 
   ylab("Offspring Pheno ~ Maternal PGS (Beta Estimate)") +
   facet_wrap(~h2) +
   theme(axis.text = element_text(size=10), strip.text = element_text(size=10), axis.title=element_text(size=10,face="bold")) +
   ggtitle("Extended Regression Model Maternal PGS Beta Estimate ") +
   scale_fill_manual(values = c("pink", "lightblue", "red"))
 image2
-#dev.off()
+```
+
+```{r sim_noIGE_pprs}
 
 #paternal pgs estimates
 
-df2 <- df[df$Predictor=="paternal_prs",]
-
-#png(file="sim_noIGE_pprs.png")
+df2 <- sim_regression_results |>
+filter(Predictor == "paternal_prs", cor_AM == "0")
 
 image3 <- ggplot(data=df2, aes(x= prs_noise, y=Estimate, fill=Tagged)) +
   geom_boxplot(outlier.size=0) +
   scale_y_continuous(limits=c(-0.5,0.5), breaks=seq(-0.5,0.5, 0.1), expand = c(0, 0)) +
-  xlab("Poylgenic Score (PGS) Noise") + 
+  xlab("Polygenic Score (PGS) Noise") + 
   ylab("Offspring Pheno ~ Paternal PGS (Beta Estimate)") +
   facet_wrap(~h2) +
   theme(axis.text = element_text(size=10), strip.text = element_text(size=10), axis.title=element_text(size=10,face="bold")) +
   ggtitle("Extended Regression Model Paternal PGS Beta Estimate ") +
   scale_fill_manual(values = c("pink", "lightblue", "red"))
 image3
-#dev.off()
+```
+
+```{r sim_noIGE_mpheno}
 
 #maternal pheno estimates
 
-#png("sim_noIGE_mpheno.png")
-
-df2 <- df[df$Predictor=="maternal_phenotype",]
+df2 <- sim_regression_results |>
+  filter(Predictor == "maternal_phenotype", cor_AM == "0")
 
 image5 <- ggplot(data=df2, aes(x= prs_noise, y=Estimate, fill=Tagged)) +
   geom_boxplot(outlier.size=0) +
   scale_y_continuous(limits=c(-0.2,0.5), breaks=seq(-0.2,0.5, 0.1), expand = c(0, 0)) +
-  xlab("Poylgenic Score (PGS) Noise") + 
+  xlab("Polygenic Score (PGS) Noise") + 
   ylab("Offspring Pheno ~ Maternal Pheno (Beta Estimate)") +
   facet_wrap(~h2) +
   theme(axis.text = element_text(size=10), strip.text = element_text(size=10), axis.title=element_text(size=10,face="bold")) +
   ggtitle("Extended Regression Model Maternal Pheno Beta Estimate ") +
   scale_fill_manual(values = c("pink", "lightblue", "red"))
 image5
-#dev.off()
+```
+
+```{r sim_noIGE_ppheno}
 
 #paternal pheno estimates
 
-#png(file="sim_noIGE_ppheno.png")
-
-df2 <- df[df$Predictor=="paternal_phenotype",]
+df2 <- sim_regression_results |>
+  filter(Predictor == "paternal_phenotype", cor_AM == "0")
 
 image6 <- ggplot(data=df2, aes(x= prs_noise, y=Estimate, fill=Tagged)) +
   geom_boxplot(outlier.size=0) +
   scale_y_continuous(limits=c(-0.2,0.5), breaks=seq(-0.2,0.5, 0.1), expand = c(0, 0)) +
-  xlab("Poylgenic Score (PGS) Noise") + 
+  xlab("Polygenic Score (PGS) Noise") + 
   ylab("Offspring Pheno ~ Paternal Pheno (Beta Estimate)") +
   facet_wrap(~h2) +
   theme(axis.text = element_text(size=10), strip.text = element_text(size=10), axis.title=element_text(size=10,face="bold")) +
   ggtitle("Extended Regression Model Paternal Pheno Beta Estimate ") +
   scale_fill_manual(values = c("pink", "lightblue", "red"))
 image6
-#dev.off()
+```
+
+```{r sim_noIGE_adjR2, eval=FALSE}
 
 #Adjusted R2
 
-df2 <- df
-
-#png(file="sim_noIGE_adjR2.png")
+df2 <- sim_r2_results |>
+  filter(cor_AM == 0)
 
 image7 <- ggplot(data=df2, aes(x= prs_noise, y=AdjR2, fill=Tagged)) +
   geom_boxplot(outlier.size=0) +
   scale_y_continuous(limits=c(0,1), breaks=seq(0,1,0.1), expand = c(0, 0)) +
-  xlab("Poylgenic Score (PGS) Noise") + 
+  xlab("Polygenic Score (PGS) Noise") + 
   ylab("Simulated Full Regression Model Accounted Variance") +
   facet_wrap(~h2) +
   theme(axis.text = element_text(size=10), strip.text = element_text(size=10), axis.title=element_text(size=10,face="bold")) +
   ggtitle("Extended Regression Model Adjusted R2 ") +
   scale_fill_manual(values = c("pink", "lightblue", "red"))
 image7
-#dev.off()
 
 ```
 
-**Pathway Plots**  
+### Pathway Plots 
 
-```{r, eval=FALSE}  
+```{r sim_mIGE_pathc}  
 
 #here we are interested in labels c and f; the parental genetic nurturing pathways i.e. effect of parent prs on offpsring prs THAT DOES NOT GO through the offsprings own PRS or the parent pheno
 
-df <- read.table("sim_pa_noIGE_m2.txt", header=F)
-df <- df[-1,]
-colnames(df) <- c("DV", "IV", "label", "Estimate", "SE", "P-value","upperCI", "lowerCI", "AIC", "replica", "h2", "Tagged", "prs_noise")
-
-df$Tagged <- as.factor(df$Tagged)
-df$h2 <- as.factor(df$h2)
-df$prs_noise <- as.factor(df$prs_noise)
-
 #maternal genetic nurturing
 
-df2 <- df[df$label=="c",]
+df2 <- sim_pathway_results |>
+  filter(label == "c", model == "extended", cor_AM == 0)
 
 plot1 <- ggplot(data=df2, aes(x=prs_noise, y=Estimate, fill=Tagged)) + 
          geom_boxplot(outlier.size=0, fatten=1) + 
          scale_y_continuous(limits=c(-0.5,0.05), breaks=seq(-0.5,0.05, 0.1), expand = c(0, 0)) +
-         xlab("Poylgenic Score (PGS) Noise") + 
+         xlab("Polygenic Score (PGS) Noise") + 
          ylab("Offspring Pheno ~ Maternal PGS Beta Estimate") +
          facet_wrap(~h2) +
          ggtitle("Extended Model Maternal Indirect Genetic Effect (Path C)") +
          scale_fill_brewer("Tagged Genetic Variance", palette="Accent") + 
          theme_bw() + 
          theme(axis.title = element_text(size=15), axis.text = element_text(size=15), strip.text = element_text(size=15), legend.title = element_text(size=15), legend.text = element_text(size=15), axis.text.x=element_text(angle=45))
+plot1
+#ggsave(file="sim_mIGE_pathc.png", plot=plot1, width=15, height=6)
+#ggsave(file="sim_mIGE_pathc.svg", plot=plot1, width=15, height=6)
 
-ggsave(file="sim_mIGE_pathc.png", plot=plot1, width=15, height=6)
-ggsave(file="sim_mIGE_pathc.svg", plot=plot1, width=15, height=6)
+```
+
+```{r sim_pIGE_pathf} 
 
 #paternal genetic nurturing
 
-df3 <- df[df$label=="f",]
+df3 <- sim_pathway_results |>
+  filter(label == "b", model == "extended", cor_AM == 0)
 
 plot2 <- ggplot(data=df3, aes(x=prs_noise, y=Estimate, fill=Tagged)) +
          geom_boxplot(outlier.size=0, fatten=1) +
          scale_y_continuous(limits=c(-0.5,0.05), breaks=seq(-0.5,0.05, 0.1), expand = c(0, 0)) +
-         xlab("Poylgenic Score (PGS) Noise") + 
+         xlab("Polygenic Score (PGS) Noise") + 
          ylab("Offspring Pheno ~ Paternal PGS Beta Estimate") +
          facet_wrap(~h2) +
          ggtitle("Extended Model Paternal Indirect Genetic Effect (Path F)") +
          scale_fill_brewer("Tagged Genetic Variance", palette="Accent") + 
          theme_bw() + 
          theme(axis.title = element_text(size=15), axis.text = element_text(size=15), strip.text = element_text(size=15), legend.title = element_text(size=15), legend.text = element_text(size=15), axis.text.x=element_text(angle=45))
+plot2
+# ggsave(file="sim_pIGE_pathf.png", plot=plot2, width=15, height=6)
+# ggsave(file="sim_pIGE_pathf.svg", plot=plot2, width=15, height=6)
 
-ggsave(file="sim_pIGE_pathf.png", plot=plot2, width=15, height=6)
-ggsave(file="sim_pIGE_pathf.svg", plot=plot2, width=15, height=6)
+```
+
+```{r sim_mIGE_pathj} 
 
 #maternal pheno
 
-df4 <- df[df$label=="j",]
+df4 <- sim_pathway_results |>
+  filter(label == "g", model == "extended", cor_AM == 0)
 
 plot3 <- ggplot(data=df4, aes(x=prs_noise, y=Estimate, fill=Tagged)) +
          geom_boxplot(outlier.size=0, fatten=1) +
          scale_y_continuous(limits=c(-0.1,0.5), breaks=seq(-0.1,0.5, 0.1), expand = c(0, 0)) +
-         xlab("Poylgenic Score (PGS) Noise") + 
+         xlab("Polygenic Score (PGS) Noise") + 
          ylab("Offspring Pheno ~ Maternal Pheno Beta Estimate") +
          facet_wrap(~h2) +
          ggtitle("Extended Model Offspring Pheno ~ Maternal Pheno Effect Beta Estimate (Path J)") +
@@ -624,17 +494,22 @@ plot3 <- ggplot(data=df4, aes(x=prs_noise, y=Estimate, fill=Tagged)) +
          theme_bw() + 
          theme(axis.title = element_text(size=15), axis.text = element_text(size=15), strip.text = element_text(size=15), legend.title = element_text(size=15), legend.text = element_text(size=15), axis.text.x=element_text(angle=45))
 
-ggsave(file="sim_mIGE_pathj.png", plot=plot3, width=15, height=6)
-ggsave(file="sim_mIGE_pathj.svg", plot=plot3, width=15, height=6)
+# ggsave(file="sim_mIGE_pathj.png", plot=plot3, width=15, height=6)
+# ggsave(file="sim_mIGE_pathj.svg", plot=plot3, width=15, height=6)
+
+```
+
+```{r sim_pIGE_pathi} 
 
 #paternal pheno
 
-df5 <- df[df$label=="i",]
+df5 <- sim_pathway_results |>
+  filter(label == "f", model == "extended", cor_AM == 0)
 
 plot4 <- ggplot(data=df5, aes(x=prs_noise, y=Estimate, fill=Tagged)) +
          geom_boxplot(outlier.size=0, fatten=1) +
          scale_y_continuous(limits=c(-0.1,0.5), breaks=seq(-0.1,0.5, 0.1), expand = c(0, 0)) +
-         xlab("Poylgenic Score (PGS) Noise") + 
+         xlab("Polygenic Score (PGS) Noise") + 
          ylab("Offspring Pheno ~ Paternal Pheno Beta Estimate") +
          facet_wrap(~h2) +
          ggtitle("Extended Model Offspring Pheno ~ Paternal Pheno Effect Beta Estimate (Path I)") +
@@ -642,14 +517,44 @@ plot4 <- ggplot(data=df5, aes(x=prs_noise, y=Estimate, fill=Tagged)) +
          theme_bw() + 
          theme(axis.title = element_text(size=15), axis.text = element_text(size=15), strip.text = element_text(size=15), legend.title = element_text(size=15), legend.text = element_text(size=15), axis.text.x=element_text(angle=45))
 
-ggsave(file="sim_pIGE_pathi.png", plot=plot4, width=15, height=6)
-ggsave(file="sim_pIGE_pathi.svg", plot=plot4, width=15, height=6)
+# ggsave(file="sim_pIGE_pathi.png", plot=plot4, width=15, height=6)
+# ggsave(file="sim_pIGE_pathi.svg", plot=plot4, width=15, height=6)
+
+```
+
+```{r final_plot}
 
 library(patchwork)
 
 final_plot <- plot1 / plot3
+final_plot
 
-ggsave(file="maternal_ige_plots.png", plot=final_plot, width=15, height=12)
-ggsave(file="maternal_ige_plots.svg", plot=final_plot, width=15, height=12)
+# ggsave(file="maternal_ige_plots.png", plot=final_plot, width=15, height=12)
+# ggsave(file="maternal_ige_plots.svg", plot=final_plot, width=15, height=12)
+
+```
+
+### Assortative mating
+
+```{r sim_ige_am}
+
+sim_pathway_am_results <- sim_pathway_results |>
+  filter(h2 == "0.6", prs_noise == "0") |>
+  filter(model %in% "simple", label %in% c("a", "b", "c", "d", "e", "f", "g", "h", "i"))
+  
+sim_pathway_exp <- c("a" = 1, "b" = 0, "c" = 0,
+                        "d" = 1, "e" = 1, "f" = 0, "g" = 0,
+                        "h" = 0.5, "i" = 0.5)
+                        
+sim_pathway_am_exp <-
+  tibble(label = names(sim_pathway_exp),
+         Estimate = as.vector(sim_pathway_exp)) |>
+  filter(label %in% sim_pathway_am_results$label)     
+  
+ggplot(sim_pathway_am_results, aes(x = cor_AM, y = Estimate, fill = Tagged)) +
+  geom_hline(data = sim_pathway_am_exp, aes(yintercept = Estimate), col = 'grey') +
+  geom_boxplot(outlier.size = 0, fatten = 1) +
+  facet_grid(cols = vars(label)) +
+  theme_minimal()
 
 ```
