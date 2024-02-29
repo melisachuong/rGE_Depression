@@ -165,8 +165,6 @@ sim_path <- function(model, cohort) {
       ##############
       #SIMPLE MODEL#
       ##############
-        
-      # Define model
       
       simple_model <- ' 
       
@@ -191,8 +189,6 @@ sim_path <- function(model, cohort) {
       ################
       #EXTENDED MODEL#
       ################
-        
-      # Define model
         
       extended_model <- '
 
@@ -224,6 +220,47 @@ sim_path <- function(model, cohort) {
       maternal_phenotype ~~ paternal_phenotype
       '
 
+      ##################
+      #ONE PARENT MODEL#
+      ##################
+      
+      # Models where only one parent's data is used
+      
+      simple_parent1_model <- ' 
+      
+      #direct effects
+      offspring_phenotype ~ c*maternal_prs         
+      
+      #mediator
+      offspring_prs ~ i*maternal_prs
+      offspring_phenotype ~ a*offspring_prs
+      
+      # indirect effects (i*a)
+      ia := i*a
+      
+      # total effects 
+      total_mum := c + (i*a)
+      '
+      
+      extended_parent1_model <- '
+      
+      #direct effects
+      offspring_phenotype ~ c*maternal_prs      
+      
+      #mediator
+      offspring_prs ~ i*maternal_prs
+      offspring_phenotype ~ a*offspring_prs
+      maternal_phenotype ~ e*maternal_prs
+      offspring_phenotype ~ g*maternal_phenotype
+      
+      # indirect effects 
+      ia := i*a
+      eg := e*g
+      
+      # total effects 
+      total_mum := c + (i*a) + (e*g)
+      '
+      
  
 # write.csv(sim_simple, paste0("sim_pa_noIGE_m1_h2", h2, "_tagged", tagged, "_prsnoise", prs_noise, ".csv"), row.names=T, quote=F)
 # write.csv(sim_extended, paste0("sim_pa_noIGE_m2_h2", h2, "_tagged", tagged, "_prsnoise", prs_noise, ".csv"), row.names=T, quote=F)
@@ -245,7 +282,7 @@ params_list <- plyr::alply(params, 1, I)
 ```
 
 ### Simulate replicate datasets
-```{r simulation, cache=TRUE}
+```{r simulation, cache=TRUE, depends_on=c('data_sim', 'sim_regression', 'sim_path', 'params')}
 replicates <- 100
 model_sims <- parallel::mclapply(params_list, function(param) {
   sims <- list()
@@ -254,11 +291,15 @@ model_sims <- parallel::mclapply(params_list, function(param) {
     regression_result <- sim_regression(cohort)
     sem_simple_result <- sim_path(simple_model, cohort)
     sem_extended_result <- sim_path(extended_model, cohort)
+    sem_simple_parent1_result <- sim_path(simple_parent1_model, cohort)
+    sem_extended_parent1_result <- sim_path(extended_parent1_model, cohort)
     sims[[i]] <- list(replica = i,
                       params = param,
                       regression = regression_result,
                       sem_simple = sem_simple_result,
-                      sem_extended = sem_extended_result)
+                      sem_extended = sem_extended_result,
+                      sem_simple_parent1 = sem_simple_parent1_result,
+                      sem_extended_parent1 = sem_extended_parent1_result)
   }
   return(sims)
 },
@@ -266,7 +307,7 @@ mc.cores = 8)
 ```
 
 Results tables
-```{r results_tables, cache=TRUE}
+```{r results_tables, cache=TRUE, depends_on = c('simulation')}
 library(dplyr)
 
 model_sims_list <-  unlist(model_sims, recursive = FALSE)
@@ -293,7 +334,9 @@ sim_r2_results <- bind_rows(
 sim_pathway_results <- bind_rows(
   lapply(model_sims_list, function(sims) {
     bind_rows(mutate(sims$sem_simple$pe, model = "simple"),
-              mutate(sims$sem_extended$pe, model = "extended")) |>
+              mutate(sims$sem_extended$pe, model = "extended"),
+              mutate(sims$sem_simple_parent1$pe, model = "simple p1"),
+              mutate(sims$sem_extended_parent1$pe, model = "extended p1")) |>
     mutate(replicate = sims$replica) |>
     bind_cols(sims$params)
   })) |>
@@ -540,7 +583,7 @@ final_plot
 
 sim_pathway_am_results <- sim_pathway_results |>
   filter(h2 == "0.6", prs_noise == "0") |>
-  filter(model %in% "simple", label %in% c("a", "b", "c", "d", "e", "f", "g", "h", "i"))
+  filter(model %in% c("simple p1", "extended p1"), label %in% c("a", "b", "c", "d", "e", "f", "g", "h", "i"))
   
 sim_pathway_exp <- c("a" = 1, "b" = 0, "c" = 0,
                         "d" = 1, "e" = 1, "f" = 0, "g" = 0,
@@ -554,7 +597,7 @@ sim_pathway_am_exp <-
 ggplot(sim_pathway_am_results, aes(x = cor_AM, y = Estimate, fill = Tagged)) +
   geom_hline(data = sim_pathway_am_exp, aes(yintercept = Estimate), col = 'grey') +
   geom_boxplot(outlier.size = 0, fatten = 1) +
-  facet_grid(cols = vars(label)) +
+  facet_grid(cols = vars(label), rows = vars(model)) +
   theme_minimal()
 
 ```
