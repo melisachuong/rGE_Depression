@@ -583,7 +583,8 @@ final_plot
 
 sim_pathway_am_results <- sim_pathway_results |>
   filter(h2 == "0.6", prs_noise == "0") |>
-  filter(model %in% c("simple p1", "extended p1"), label %in% c("a", "b", "c", "d", "e", "f", "g", "h", "i"))
+  filter(model %in% c("simple p1", "extended p1"), label %in% c("a", "b", "c", "d", "e", "f", "g", "h", "i")) |>
+  mutate(Model = case_match(model, "simple p1" ~ "Simple Model", "extended p1" ~ "Extended Model"))
   
 sim_pathway_exp <- c("a" = 1, "b" = 0, "c" = 0,
                         "d" = 1, "e" = 1, "f" = 0, "g" = 0,
@@ -595,9 +596,13 @@ sim_pathway_am_exp <-
   filter(label %in% sim_pathway_am_results$label)     
   
 ggplot(sim_pathway_am_results, aes(x = cor_AM, y = Estimate, fill = Tagged)) +
-  geom_hline(data = sim_pathway_am_exp, aes(yintercept = Estimate), col = 'grey') +
+  geom_hline(data = sim_pathway_am_exp, aes(yintercept = Estimate), col = 'blue') +
   geom_boxplot(outlier.size = 0, fatten = 1) +
-  facet_grid(cols = vars(label), rows = vars(model)) +
-  theme_minimal()
+  facet_grid(cols = vars(label), rows = vars(Model)) +
+  ggtitle("Simulation results: Assortative mating") +
+  scale_x_discrete("Assortative mating correlation") +
+  scale_y_continuous("Path estimate") +
+  scale_fill_brewer("Tagged Genetic Variance", palette="Accent") +
+  theme_bw()
 
 ```
