@@ -603,6 +603,9 @@ ggplot(sim_pathway_am_results, aes(x = cor_AM, y = Estimate, fill = Tagged)) +
   scale_x_discrete("Assortative mating correlation") +
   scale_y_continuous("Path estimate") +
   scale_fill_brewer("Tagged Genetic Variance", palette="Accent") +
-  theme_bw()
-
+  theme_bw() +
+  theme(legend.position = "bottom")
+  
+ggsave(file = "Simulations_PA_Figures_manuscript/am_rGE_pa_manuscript.png", width = 10, height = 6)
+ggsave(file = "Simulations_PA_Figures_manuscript/am_rGE_pa_manuscript.svg", width = 10, height = 6)
 ```
