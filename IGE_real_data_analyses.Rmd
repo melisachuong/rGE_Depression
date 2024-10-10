@@ -13,10 +13,8 @@ output:
 Genotyped data and pedigree files can be found on datastore @/exports/igmm/eddie/GenScotDepression/data/genscot/genetics/genotypes/GS20K_PLINK_files/QCd_data   
 *These files are saved as GS_QC.bed/.bim/.fam*  
 
-```{r, eval=FALSE}
-rm(list=ls())
-
-fam <- read.table("GS_QC.fam") #this file was renamed for convenience 
+```{r fam, cache=TRUE}
+fam <- read.table(here::here("data", "gs", "GS_QC.fam")) #this file was renamed for convenience 
 colnames(fam) <- c("FID", "IID", "PID", "MID", "SEX", "PHENO")
 
 fatherpresent <- fam[fam$PID%in%fam$IID,] #Finding PIDs also present in the IID column - every individual in the IID column in the pedigree file has genotyped data#
@@ -26,96 +24,80 @@ motherpresent <- fam[fam$MID%in%fam$IID,] #Finding MIDs also present in the IID 
 dim(motherpresent) #motherduo n=5,954
 
 trio <- fam[fam$PID%in%fam$IID & fam$MID%in%fam$IID,] #Finding trios, i.e. individuals with both PIDs and MIDs present in the IID column#
-
-write.table(trio, "GS_trio", row.names=F, quote=F)
-#n= 2680 genotyped trios available in Generation Scotland
 ```
 
+n= `r nrow(trio)` genotyped trios available in Generation Scotland
+
 # Phenotypes {.tabset}  
+
+## Covars
+
+```{r covar, cache = TRUE}
+age <- read.table(here::here("data", "gs", "GS_Ages.qcovar"), header=T)
+age <- age[,c("IID", "age")]
+colnames(age) <- c("IID", "AGE")
+
+sex <- read.table(here::here("data", "gs", "GS_SexClinic.fcovar"), header=T)
+sex <- sex[,c("IID", "sex")]
+colnames(sex) <- c("IID", "SEX")
+
+pcs <- read.table(here::here("data", "gs", "HM3mds.mds"), header=T)
+pcs <- pcs[!pcs$FID %in% c("CEU", "CHB", "YRI", "TSI", "JPT", "CHD", 
+"MEX", "GIH", "ASW", "LWK", "MKK"), ] # remove reference sets
+pcs$FID <- NULL
+pcs$SOL <- NULL
+
+covars <- merge(age, sex, by="IID")
+covars <- merge(covars, pcs, by="IID")
+
+covar_formula <- . ~ AGE+SEX+C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20
+```
 
 ## Height  
 
 Raw Phenotype  
 
-```{r, eval=FALSE}
+```{r height, cache=TRUE}
 
-rm(list=ls())
-
-df <- load("masterDB.Rdata")
+df <- load(here::here("data", "gs", "masterDB.Rdata"))
 which(colnames(totaldata)=="height")
 
-#column IID =1, FID =79, HEIGHT=34
-height <- totaldata[,c(1,34,79)]
-
-#Reordering so column order is FID, IID, HEIGHT
-height <- height[,c(3,1,2)] #n=24,075
+height <- totaldata[,c('id','height')]
 height <- height[complete.cases(height),] #n=21,450
-colnames(height) <- c("FID", "IID", "HEIGHT")
-
-write.table(height, "GSheight", row.names=F, quote=F)
+colnames(height) <- c("IID", "HEIGHT")
 ```
 
-Quality Controlled Phenotype  
+Trio Phenotype  
 
-```{r, eval=FALSE}
-age <- read.table("GS_Ages.qcovar", header=T)
-age <- age[,1:3]
-colnames(age) <- c("FID", "IID", "AGE")
+```{r trio_height, cache=TRUE}
 
-sex <- read.table("GS_SexClinic.fcovar", header=T)
-sex <- sex[,1:3]
-colnames(sex) <- c("FID", "IID", "SEX")
+height_covars <- merge(height, covars, "IID")
 
-cov <- merge(age, sex, by=c("FID", "IID"))
+#Regressing out the effects of AGE, SEX, and PCs
+height_cov_m <- lm(update(covar_formula, HEIGHT~.), data=height_covars)
+height_res <- height_covars[, c("IID", "HEIGHT")]
+height_res$HEIGHT_res <- residuals(height_cov_m)
 
-colnames(height) <- c("FID", "IID", "HEIGHT")
+summary(height_res$HEI_res)
+sd(height_res$HEI_res)
 
-df1 <- merge(height, cov, by=c("FID", "IID")) #n=20,026
-
-#We need to remove individuals with NA data
-df1 <- df1[!is.na(df1$HEIGHT),] #n=19,961
-
-#Regressing out the effects of AGE and SEX - because we want to remove outliers after controlling for age and sex covariates
-reg <- lm(HEIGHT~AGE+SEX, data=df1)
-res <- data.frame(FID=df1$FID, IID=df1$IID, HEI_res=residuals(reg))
-
-summary(res$HEI_res)
-sd(res$HEI_res)
-
-outlierIDs_positive <- subset(res, res$HEI_res>mean(res$HEI_res)+4*sd(res$HEI_res))
-outlierIDs_negative <- subset(res, res$HEI_res<mean(res$HEI_res)-4*sd(res$HEI_res))
-
-outlierIDs <- rbind(outlierIDs_positive, outlierIDs_negative)#n=8
-
-#We only actually need the identity numbers of the outliers
-outlierIDs <- outlierIDs[,1:2]
-
-write.table(outlierIDs, "heightOUTLIERS", row.names=F, quote=F)
-
-#Now removing outliers from our height variable
-cleanheight <- height[!(height$IID%in%outlierIDs$IID),] #n=(21,450-8) 21,442
-write.table(cleanheight, "HEIGHT_outliers_removed", row.names = F, quote=F)
-
-trio <- read.table("GS_trio", header=T)
-df2 <- merge(trio, cleanheight, by=c("FID", "IID"), all.x=T)
-colnames(cleanheight)[2:3] <- c("MID", "mHEIGHT")
-df3 <- merge(df2, cleanheight, by=c("FID", "MID"), all.x=T)
-colnames(cleanheight)[2:3] <- c("PID", "pHEIGHT")
-df4 <- merge(df3, cleanheight, by=c("FID", "PID"), all.x=T)
+trio_height <- merge(trio, height_res, by="IID", all.x=T)
+trio_height <- merge(trio_height, height_res, by.x = "MID", by.y = "IID", suffixes = c('', '_mat'))
+trio_height <- merge(trio_height, height_res, by.x = "PID", by.y = "IID", suffixes = c('', '_pat'))
 
 ```
 
 Phenotype Demographics  
 
-```{r, eval=FALSE}
-df4 <- df4[complete.cases(df4),]
+```{r height_demo}
+trio_height_complete <- trio_height[complete.cases(trio_height),]
 pheno_info <- c()
 
-for(column in c('HEIGHT', 'mHEIGHT', 'pHEIGHT')){
-  min_pheno <- min(df4[column])
-  max_pheno <- max(df4[column])
-  mean_pheno <- sum(df4[column])/dim(df4)[1]
-  height_info <- Reduce(function(x,y) cbind(x=x, y=y), list(column, min_pheno, mean_pheno, max_pheno, dim(df4)[1]))
+for(column in c('HEIGHT', 'HEIGHT_mat', 'HEIGHT_pat')){
+  min_pheno <- min(trio_height_complete[column])
+  max_pheno <- max(trio_height_complete[column])
+  mean_pheno <- sum(trio_height_complete[column])/dim(trio_height_complete)[1]
+  height_info <- Reduce(function(x,y) cbind(x=x, y=y), list(column, min_pheno, mean_pheno, max_pheno, dim(trio_height_complete)[1]))
   pheno_info <- rbind(pheno_info, height_info)
 }
 
@@ -125,310 +107,105 @@ for(column in c('HEIGHT', 'mHEIGHT', 'pHEIGHT')){
 
 Raw Phenotype  
 
-```{r, eval=FALSE}
+```{r ea, cache=TRUE}
 
-df <- load("masterDB.Rdata")
-which(colnames(totaldata)=="years_category")
-
-ea <- totaldata[,c(1,41,79)]
-ea <- ea[,c(3,1,2)]
-
-colnames(ea) <- c("FID", "IID", "EA")
-
-write.table(ea, "GSea", row.names=F, quote=F)
+ea <- totaldata[,c("id", "years_category")]
+colnames(ea) <- c("IID", "EA")
+ea <- ea[complete.cases(ea),]
 
 ```
 
-Quality Controlled Phenotype  
+Trios Phenotype  
 
-```{r, eval=FALSE}
+```{r ea_trio}
 
-age <- read.table("GS_Ages.qcovar", header=T)
-age <- age[,1:3]
-colnames(age) <- c("FID", "IID", "AGE")
-
-sex <- read.table("GS_SexClinic.fcovar", header=T)
-sex <- sex[,1:3]
-colnames(sex) <- c("FID", "IID", "SEX")
-
-cov <- merge(age, sex, by=c("FID", "IID"))
-
-df1 <- merge(ea, cov, by=c("FID", "IID")) #n=20,026
-
-#We need to remove individuals with NA data
-df1 <- df1[complete.cases(df1),] #n=18,921
+ea_covars <- merge(ea, covars, by = "IID")
+ea_covars <- ea_covars[complete.cases(ea_covars),]
 
 #Regressing out the effects of AGE and SEX
-reg <- lm(EA~AGE+SEX, data=df1)
-res <- data.frame(FID=df1$FID, IID=df1$IID, EA_res=residuals(reg))
+ea_cov_m <- lm(update(covar_formula, EA~.), data=ea_covars)
+ea_res <- ea_covars[, c("IID", "EA")]
+ea_res$EA_res <- residuals(ea_cov_m)
 
-summary(res$EA_res)
-sd(res$EA_res)
+summary(ea_res$EA_res)
+sd(ea_res$EA_res)
 
-outlierIDs_positive <- subset(res, res$EA_res>mean(res$EA_res)+4*sd(res$EA_res))
-outlierIDs_negative <- subset(res, res$EA_res<mean(res$EA_res)-4*sd(res$EA_res))
+trio_ea <- merge(trio, ea_res, by="IID", all.x=T)
+trio_ea <- merge(trio_ea, ea_res, by.x = "MID", by.y = "IID", suffixes = c('', '_mat'))
+trio_ea <- merge(trio_ea, ea_res, by.x = "PID", by.y = "IID", suffixes = c('', '_pat'))
 
-#No outliers! 
-cleanea <- ea
-write.table(cleanea, "EA_outliers_removed", row.names = F, quote = F)
-
-trio <- read.table("GS_trio", header=T)
-df2 <- merge(trio, cleanea, by=c("FID", "IID"), all.x=T)
-colnames(cleanea)[2:3] <- c("MID", "mEA")
-df3 <- merge(df2, cleanea, by=c("FID", "MID"), all.x=T)
-colnames(cleanea)[2:3] <- c("PID", "pEA")
-df4 <- merge(df3, cleanea, by=c("FID", "PID"), all.x=T)
 
 ```
 
 Phenotype Demographics  
 
 ```{r, eval=FALSE}
-df4 <- df4[complete.cases(df4),]
+ea_complete <- trio_ea[complete.cases(trio_ea),]
 
-for(column in c('EA', 'mEA', 'pEA')){
-  min_pheno <- min(df4[column])
-  max_pheno <- max(df4[column])
-  mean_pheno <- sum(df4[column])/dim(df4)[1]
-  ea_info <- Reduce(function(x,y) cbind(x=x, y=y), list(column, min_pheno, mean_pheno, max_pheno, dim(df4)[1]))
+for(column in c('EA', 'EA_mat', 'EA_pat')){
+  min_pheno <- min(ea_complete[column])
+  max_pheno <- max(ea_complete[column])
+  mean_pheno <- sum(ea_complete[column])/dim(ea_complete)[1]
+  ea_info <- Reduce(function(x,y) cbind(x=x, y=y), list(column, min_pheno, mean_pheno, max_pheno, dim(ea_complete)[1]))
   pheno_info <- rbind(pheno_info, ea_info)
 }
 
 ```
 
-## Psychological Distress  
+## Depressive symptoms 
 
 Raw Phenotype  
 
-```{r, eval=FALSE}
+```{r ghq}
 
-ghq <- read.csv("GS_All_GHQ.csv")
-which(colnames(ghq)=="GHQTotal")
-ghqt <- ghq[,c(1,30)] #19,759
+ghq <- read.csv(here::here("data", "gs", "GS_All_GHQ.csv"))
+ghq_dep <- ghq[,c("id", "GHQDepression")]
+ghq_dep <- ghq_dep[complete.cases(ghq_dep),]
+names(ghq_dep) <- c("IID", "GHQD")
 
-colnames(ghqt)[1] <- c("IID")
-ghqt <- ghqt[complete.cases(ghqt),] #n=19,695
-
-write.table(ghqt, "GHQ_tot", row.names=F, quote=F)
 
 ```
 
-Quality Controlled Phenotype  
+Trios Phenotype  
 
-```{r, eval=FALSE}
-age <- read.table("GS_Ages.qcovar", header=T)
-age <- age[,1:3]
-colnames(age) <- c("FID", "IID", "AGE")
+```{r ghq_trios}
 
-sex <- read.table("GS_SexClinic.fcovar", header=T)
-sex <- sex[,1:3]
-colnames(sex) <- c("FID", "IID", "SEX")
-
-cov <- merge(age, sex, by=c("FID", "IID")) #n=20,032
-
-df1 <- merge(ghqt, cov, by="IID") #n=18,264
-
-#We need to remove individuals with NA data
-df1 <- df1[!is.na(df1$GHQTotal),] #n=18,624
+ghqd_covars <- merge(ghq_dep, covars, by=c("IID")) #n=19,961
 
 #Regressing out the effects of AGE and SEX
-reg <- lm(GHQTotal~AGE+SEX, data=df1)
-res <- data.frame(IID=df1$IID, GHQT_res=residuals(reg))
+ghqd_cov_m <- lm(update(covar_formula, GHQD~.), data=ghqd_covars)
+ghqd_res <- ghqd_covars[, c("IID", "GHQD")]
+ghqd_res$GHQD_res <- residuals(ghqd_cov_m)
 
-summary(res$GHQT_res)
-sd(res$GHQT_res)
+summary(ghqd_res$GHQD_res)
+sd(ghqd_res$GHQD_res)
 
-outlierIDs_positive <- subset(res, res$GHQT_res>mean(res$GHQT_res)+4*sd(res$GHQT_res))
-outlierIDs_negative <- subset(res, res$GHQT_res<mean(res$GHQT_res)-4*sd(res$GHQT_res))
-
-outlierIDs <- rbind(outlierIDs_positive, outlierIDs_negative) #n=157
-
-#We only actually need the identity numbers of the outliers
-outlierIDs <- outlierIDs[,1:2]
-
-write.table(outlierIDs, "ghqtOUTLIERS", row.names=F, quote=F)
-
-#Now removing outliers from our GHQT variable
-clean_ghqt <- ghqt[!(ghqt$IID%in%outlierIDs$IID),] #n=(19,695-157) 19,538
-write.table(clean_ghqt, "GHQTotal_outliers_removed")
-
-trio <- read.table("GS_trio", header=T)
-df2 <- merge(trio, clean_ghqt, by="IID", all.x=T)
-colnames(clean_ghqt) <- c("MID", "m_ghqt")
-df3 <- merge(df2, clean_ghqt, by="MID", all.x=T)
-colnames(clean_ghqt) <- c("PID", "p_ghqt")
-df4 <- merge(df3, clean_ghqt, by="PID", all.x=T)
+trio_ghqd <- merge(trio, ghqd_res, by="IID", all.x=T)
+trio_ghqd <- merge(trio_ghqd, ghqd_res, by.x = "MID", by.y = "IID", suffixes = c('', '_mat'))
+trio_ghqd <- merge(trio_ghqd, ghqd_res, by.x = "PID", by.y = "IID", suffixes = c('', '_pat'))
 
 ```
 
 Phenotype Demographics  
 
-```{r, eval=FALSE}
-df4 <- df4[complete.cases(df4),]
+```{r ghq_demo}
+trio_ghqd_compete <- trio_ghqd[complete.cases(trio_ghqd),]
 
-for(column in c('GHQTotal', 'm_ghqt', 'p_ghqt')){
-  min_pheno <- min(df4[column])
-  max_pheno <- max(df4[column])
-  mean_pheno <- sum(df4[column])/dim(df4)[1]
-  ghqt_info <- Reduce(function(x,y) cbind(x=x, y=y), list(column, min_pheno, mean_pheno, max_pheno, dim(df4)[1]))
+for(column in c('GHQD', 'GHQD_mat', 'GHQD_pat')){
+  min_pheno <- min(trio_ghqd_compete[column])
+  max_pheno <- max(trio_ghqd_compete[column])
+  mean_pheno <- sum(trio_ghqd_compete[column])/dim(trio_ghqd_compete)[1]
+  ghqt_info <- Reduce(function(x,y) cbind(x=x, y=y), list(column, min_pheno, mean_pheno, max_pheno, dim(trio_ghqd_compete)[1]))
   pheno_info <- rbind(pheno_info, ghqt_info)
 }
 
 ```
 
-## Depression  
-
-Raw Phenotype  
-
-```{r, eval=FALSE}
-which(colnames(ghq)=="GHQDepression")
-ghqd <- ghq[,c(1,34)] #19,759
-
-colnames(ghqd)[1] <- "IID"
-ghqd <- ghqd[complete.cases(ghqd),] #n=19,682
-
-write.table(ghqd, "GHQ_dep", row.names=F, quote=F)
-
-```
-
-Quality Controlled Phenotype  
-
-```{r, eval=FALSE}
-df1 <- merge(ghqd, cov, by="IID") #n=18,252
-
-#We need to remove individuals with NA data
-df1 <- df1[!is.na(df1$GHQDepression),] #n=18,252
-
-#Regressing out the effects of AGE and SEX
-reg <- lm(GHQDepression~AGE+SEX, data=df1)
-res <- data.frame(IID=df1$IID, GHQD_res=residuals(reg))
-
-summary(res$GHQD_res)
-sd(res$GHQD_res)
-
-outlierIDs_positive <- subset(res, res$GHQD_res>mean(res$GHQD_res)+4*sd(res$GHQD_res))
-outlierIDs_negative <- subset(res, res$GHQD_res<mean(res$GHQD_res)-4*sd(res$GHQD_res))
-
-outlierIDs <- rbind(outlierIDs_positive, outlierIDs_negative) #n=291
-
-#We only actually need the identity numbers of the outliers
-outlierIDs <- outlierIDs[,1:2]
-
-write.table(outlierIDs, "ghqdOUTLIERS", row.names=F, quote=F)
-
-#Now removing outliers from our GHQD variable
-clean_ghqd <- ghqd[!(ghqd$IID%in%outlierIDs$IID),] #n=(19,682-291) 19,391
-write.table(clean_ghqd, "GHQDepression_outliers_removed", row.names = F, quote = F)
-
-trio <- read.table("GS_trio", header=T)
-df2 <- merge(trio, clean_ghqd, by="IID", all.x=T)
-colnames(clean_ghqd) <- c("MID", "m_ghqd")
-df3 <- merge(df2, clean_ghqd, by="MID", all.x=T)
-colnames(clean_ghqd) <- c("PID", "p_ghqd")
-df4 <- merge(df3, clean_ghqd, by="PID", all.x=T)
-
-```
-
-Phenotype Demographics  
-
-```{r, eval=FALSE}
-df4 <- df4[complete.cases(df4),]
-
-for(column in c('GHQDepression', 'm_ghqd', 'p_ghqd')){
-  min_pheno <- min(df4[column])
-  max_pheno <- max(df4[column])
-  mean_pheno <- sum(df4[column])/dim(df4)[1]
-  ghqd_info <- Reduce(function(x,y) cbind(x=x, y=y), list(column, min_pheno, mean_pheno, max_pheno, dim(df4)[1]))
-  pheno_info <- rbind(pheno_info, ghqd_info)
-}
-write.csv(pheno_info, "pheno_demographics.csv", row.names = F, quote = F)
-
-```
-
 # Polygenic Risk Scores {.tabset}  
 
-PRSice2 (Choi & O'Reilly., 2019) is used to generate the PRSs.  
+GenoPred (Pain, Al-Chalabi, & Lewis, 2024) is used to generate the PRSs using SBayesR (Lloyd-Jones 2019) and unweighted clumping-and-thresholding.  
 Phenotypes will be corrected for covariates.  
 We will use 1000G as a reference panel for LD estimation which will go onto guide pruning and clumping of SNPs. 
-
-## Covariate Correction  
-
-Phenotypes are pre-corrected for 20 PCs, age and sex  
-
-```{r, eval=FALSE}
-
-library(dplyr)
-
-age <- read.table("GS_Ages.qcovar", header=T)
-age <- age[,c(1:3)] #2 columns with age measured in different formats, using the years (column)
-colnames(age) <- c("FID", "IID", "AGE")#n=20,032
-
-sex <- read.table("GS_SexClinic.fcovar", header=T)
-sex <- sex[,c(1:3)] #just using the sex info
-colnames(sex) <- c("FID", "IID", "SEX")
-sex$SEX <- as.factor(sex$SEX)#n=20,032
-
-pcs <- read.table("HM3mds.mds", header=T)
-pcs <- distinct(pcs, IID, .keep_all = TRUE) #Some IIDs are repeated, so need to sort this out#
-head(pcs)
-pcs <- pcs[,-3]#n=20,142
-
-cov <- merge(age, sex, by=c("FID","IID"))
-cov <- merge(cov, pcs, by=c("FID", "IID"))#n=19,990
-write.table(cov, "GScov", row.names=F, quote=F)
-
-# height 
-
-df1 <- merge(height, cov, by=c("FID","IID"))
-df1 <- df1[complete.cases(df1),]
-
-reg <- lm(HEIGHT~C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20+AGE+SEX, data=df1)
-summary(reg)
-result <- data.frame(FID=df1$FID, IID=df1$IID, HEI_res=residuals(reg))
-write.table(result, "GSheight_res", row.names=F, quote=F)
-
-# ea
-
-df1 <- merge(ea, cov, by=c("FID","IID"))
-df1 <- df1[complete.cases(df1),]
-
-res <- lm(EA~C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20+AGE+SEX, data=df1)
-summary(res)
-result <- data.frame(FID=df1$FID, IID=df1$IID, EA_res=residuals(res))
-write.table(result, "GSea_res", row.names=F, quote=F)he
-
-# psych distress  
-
-df1 <- merge(ghqt, cov, by="IID")
-df1 <- df1[complete.cases(df1),]
-
-res <- lm(GHQTotal~C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20+AGE+SEX, data=df1)
-result <- data.frame(FID=df1$FID, IID=df1$IID, GHQT_res=residuals(res))
-write.table(result, "GHQ_tot_res", row.names=F, quote=F)
-
-# depression 
-
-df1 <- merge(ghqd, cov, by="IID")
-df1 <- df1[complete.cases(df1),]
-
-res <- lm(GHQDepression~C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20+AGE+SEX, data=df1)
-result <- data.frame(FID=df$FID, IID=df$IID, GHQD_res=residuals(res))
-write.table(result, "GHQ_dep_res", row.names=F, quote=F)
-
-
-```
-
-## Polygenic Score Calculation  
-
-1000G files need to be in the format of plink1 files. Plink2 versions are available on datastore @ /exports/igmm/datastore/GenScotDepression/data/resources/1000g/PGEN
-
-Need to convert vzs plink2 versions of files to .bed\.bim\.fam plink1 versions
-plink2.00 is used for this 
-
-```
-plink --pfile all_phase3 --max-allele 2 --make-bed --out all_phase3
-
-```
 
 We will use:
 
@@ -437,470 +214,220 @@ Height GWAS meta-analysis sumstats  ~ Yengo et al., 2018: Wood et al., 2014 N= 2
 
 EA GWAS meta-analysis sumstats  ~ Lee et al., 2018 (removing 23&Me + GS data) N= 1,131,880-381,477 =750,403   
 
-Depression GWAS sumstats ~ Howard et al., 2019, 29 PGC cohorts and 23&Me data only (Sample size = 807,553, ncase=246,363, ncontrol=561,190)   
+Depression GWAS sumstats ~ Howard et al., 2019, (removing GS) (ncase=242,956; ncontrol=542,391)   
 
-LD data: 1000G LD structure (see above)  
+```{r prs}  
 
-Phenotype data: The residualised phenotype files we created above. This is height, educational attainment, psychological distress, depression for all GS participants with the effects of age, sex and 20PCs removed  
-
-Target data: Will be the available plink files for GS; GS_QC.bed, GS_QC.bim, GS_QC.fam  
-
-We will be creating different PRSs whereby the number of SNPs used to inform the PRSs will be dependent on the SNPs p-value GWAS association with the trait. We use 10 different p-value association thresholds ranging from 5x10-8 : 1.
-
-Example Shell script
-
-```
-#!/bin/sh
-###########################################
-
-# M.Chuong, Edinburgh U.K, January2020
-# Eddie HEIGHT PRSice Script
-
-#$ -N GenScot{Height}PRS
-#$ -cwd
-#$ -pe sharedmem 2 # number of cores
-#$ -l h_vmem=40G # memory per core
-#$ -l h_rt=12:00:00 ## requested time
-#$ -m baes ## notifications: (b)begin/(a)aborted/(e)end/(s)suspended/(n)nomail
-#$ -M melisa.chuong@ed.ac.uk ## email for notifications
-
-# INITIALISE ENV MODULES
-. /etc/profile.d/modules.sh # if using modules need to add this line
-# LOAD THE MODULES
-module load igmm/apps/R/3.3.3
+hPRS_sbayesr <- read.table(here::here("data/pgs/sbayesr/Height_Yengo2018/genscot-Height_Yengo2018-EUR.profiles"), header = TRUE)
+eaPRS_sbayesr <- read.table(here::here("data/pgs/sbayesr/EduYears_Lee2018/genscot-EduYears_Lee2018-EUR.profiles"), header = TRUE)
+depPRS_sbayesr <- read.table(here::here("data/pgs/sbayesr/MDD_Howard2019/genscot-MDD_Howard2019-EUR.profiles"), header = TRUE)
 
 
-Rscript PRSice.R\ 
---dir .\ 
---prsice ./PRSice_linux\
---base {Meta-analysis_Wood_et_al+UKBiobank_2018.txt}\ 
---target GS_QC\ 
---thread 1\ 
---print-snp\ 
---beta\ 
---stat Effect\ 
---binary-target F\ 
---snp MarkerName\ 
---A1 Allele1\ 
---A2 Allele2\ 
---se StdErr\ 
---pvalue P-value\ 
---bar-levels 0.00000005,0.0000005,0.000005,0.00005,0.0005,0.005,0.05,0.5,0.75,1\ 
---fastscore\ 
---all-score\ 
---ld all_phase3\ 
---pheno-file {GSheight_res}\ 
---pheno-col {HEI_res}\ 
---out {GSheight}
+hPRS_unweighted <- read.table(here::here("data/pgs/ptclump/Height_Yengo2018_unweighted/genscot-Height_Yengo2018_unweighted-EUR.profiles"), header = TRUE)
+eaPRS_unweighted <- read.table(here::here("data/pgs/ptclump/EduYears_Lee2018_unweighted/genscot-EduYears_Lee2018_unweighted-EUR.profiles"), header = TRUE)
+depPRS_unweighted <- read.table(here::here("data/pgs/ptclump/MDD_Howard2019_unweighted/genscot-MDD_Howard2019_unweighted-EUR.profiles"), header = TRUE)
 
-```
-## PRS_PC  
-
-10 different PGSs are available for each phenotype created using different parameters. The most appropriate PRS is unclear, particularly as we have different phenotypes. For example, p=0.05 is a threshold that has been found to produce the best performing PRS for depression in an independent validation dataset (Wray et al., 2018). This threshold may not result in the best performing PRS for height or educational attainment.  
-
-A new method suggests using the 1st principal component of all the available PRS is a valid method moving forward.  
-
-```{r, eval=FALSE}  
-
-hPRS <- read.table("GSheight.all.score", header=T)
-eaPRS <- read.table("GSea.all.score", header=T)
-depPRS <- read.table("GSdep.all.score", header=T)
-
-for(prs in c('h', 'ea', 'dep')){
-  pheno <- prs
-  prs <- get(paste0(prs, "PRS")) 
-  pca <- prcomp(prs[,3:12], center=TRUE, scale.=TRUE)
-  
-  prs$PRS_pc <- pca$x[,1] # adding PRS_pc (PC1) to the PRS dataframe
-  
-  # obtain PRS_pc correlations with generated PRS
-  cor_values <- c()
-  for(col in c(3:12)){
-    cor_values <- rbind(cor_values, cor(prs[,col], prs[,13]))
-  }
-  
-  pca_loading <- as.data.frame(pca$rotation)[1]
-  colnames(pca_loading) <- 'loading_values'
-  pc_info <- cbind(pca_loading, cor_values)
-  pc_info$PC1_r2 <- summary(pca)$importance[,1][2]
-  pc_info$PC1_sd <- summary(pca)$importance[,1][1]
-  write.csv(pc_info, paste0(pheno, "_PRSpc_info.csv"), row.names=T, quote=F)
-  write.table(prs, paste0(pheno, "_allPRS"), row.names=F, quote=F)
-}
+PRS <- merge(hPRS_sbayesr, eaPRS_sbayesr, by = c("FID", "IID"))
+PRS <- merge(PRS, depPRS_sbayesr, by = c("FID", "IID"))
+PRS <- merge(PRS, hPRS_unweighted, by = c("FID", "IID"))
+PRS <- merge(PRS, eaPRS_unweighted, by = c("FID", "IID"))
+PRS <- merge(PRS, depPRS_unweighted, by = c("FID", "IID"))
+PRS$FID <- NULL
 
 ```
 
-# Sanity Checks  
+# Feature Checks  
 
 **1. Are the calculated PGS_pcs associated with our phenotypes of interest?**  
 
-```{r, eval=FALSE}
-rm(list=ls())
+```{r checks, cache = TRUE}
 
-cov <- read.table("GScov", header=T)
-cov <- cov[,-1]
-GStrio <- read.table("GS_trio", header=T)
+library(lme4)
+library(ggplot2)
 
-offid <- as.data.frame(GStrio$IID)
-colnames(offid) <- 'IID'
-matid <- as.data.frame(GStrio$MID)
-colnames(matid) <- 'IID'
-patid <- as.data.frame(GStrio$PID)
-colnames(patid) <- 'IID'
+phenos <- merge(height, ea, by = "IID", all = TRUE)
+phenos <- merge(phenos, ghq_dep, by = "IID", all = TRUE)
 
-sc1_results <- c()
-all_res <- c()
-off_res <- c()
-mat_res <- c()
-pat_res <- c()
+phenos_prs <- merge(phenos, PRS, by = "IID")
+phenos_prs <- merge(phenos_prs, fam, by = "IID")
 
-for(prs_prefix in c('h', 'ea', 'dep')){
-  prs <- read.table(paste0(prs_prefix, '_allPRS'), header=T)
-  prs <- prs[,-1] # removing FID column
+phenos_prs_map <- c("HEIGHT" = "Height_Yengo2018",
+                    "EA" = "EduYears_Lee2018",
+                    "GHQD" = "MDD_Howard2019")
+prs_methods <- c("SBayesR", paste0("unweighted_0_", c("5e.08", "1e.06", "1e.04", "0.01", "0.1", "0.2", "0.3", "0.4", "0.5", "1")))
+
+pheno_prs_checks <- data.frame(pheno = rep(names(phenos_prs_map), times = length(prs_methods)),
+                               method = rep(prs_methods, each = length(names(phenos_prs_map))),
+                               beta = NA, se = NA)
+                               
+for(i in seq.int(nrow(pheno_prs_checks))) {
+  pheno <- pheno_prs_checks[i,"pheno"]
+  method <- pheno_prs_checks[i,"method"]
+
+  prs_predictor <- paste0(phenos_prs_map[[pheno]], "_", method)
+  prs_formula <- as.formula(paste(pheno, "~", prs_predictor))
+  m <- lmer(update(prs_formula, . ~ . + (1 | FID)), data = phenos_prs)
+  m_summary <- summary(m)$coefficients
+  b <- m_summary[prs_predictor,'Estimate']
+  se <- m_summary[prs_predictor,'Std. Error']
   
-  for(pheno_prefix in c('HEIGHT', 'EA', 'GHQTotal', 'GHQDepression')){
-    
-    if(pheno_prefix=='GHQTotal' | pheno_prefix=='GHQDepression'){
-      pheno <- read.table(paste0(pheno_prefix, '_outliers_removed'), header=T)
-    } else {
-      pheno <- read.table(paste0(pheno_prefix, '_outliers_removed'), header=T)
-      pheno <- pheno[,-1] # removing FID column
-    }
-    
-    all_df <- Reduce(function(x,y) merge(x=x,y=y, by='IID'), list(pheno, prs, cov))
-    all_df['PRS_pc'] <- scale(all_df['PRS_pc'], center=TRUE, scale=TRUE)
-    colnames(all_df)[2] <- 'pheno'
-    off_df <- merge(all_df, offid, by='IID')
-    mat_df <- merge(all_df, matid, by='IID')
-    pat_df <- merge(all_df, patid, by='IID')
-    
-    if(pheno_prefix=='GHQTotal' | pheno_prefix=='GHQDepression'){
-      
-      # for binary traits we need to run glm() models 
-      for(threshold in 3:13){
-        all_glm <- summary(glm(pheno ~ all_df[,threshold]+C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20+AGE+SEX, data=all_df))
-        all_lm <- summary(lm(pheno ~ all_df[,threshold]+C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20+AGE+SEX, data=all_df))
-        all_subres <- c(all_glm$coefficients[2,], all_glm$df[2]+23, all_lm$adj.r.squared, 'all', pheno_prefix, names(all_df)[threshold], prs_prefix)
-        all_res <- rbind(all_res, all_subres)
-        
-        off_glm <- summary(glm(pheno ~ off_df[,threshold]+C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20+AGE+SEX, data=off_df))
-        off_lm <- summary(lm(pheno ~ off_df[,threshold]+C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20+AGE+SEX, data=off_df))
-        off_subres <- c(off_glm$coefficients[2,], off_glm$df[2]+23, off_lm$adj.r.squared, 'off', pheno_prefix, names(off_df)[threshold], prs_prefix)
-        off_res <- rbind(off_res, off_subres)
-        
-        mat_glm <- summary(glm(pheno ~ mat_df[,threshold]+C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20+AGE, data=mat_df))
-        mat_lm <- summary(lm(pheno ~ mat_df[,threshold]+C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20+AGE, data=mat_df))
-        mat_subres <- c(mat_glm$coefficients[2,], mat_glm$df[2]+23, mat_lm$adj.r.squared, 'mat', pheno_prefix, names(mat_df)[threshold], prs_prefix)
-        mat_res <- rbind(mat_res, mat_subres)
-        
-        pat_glm <- summary(glm(pheno ~ pat_df[,threshold]+C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20+AGE, data=pat_df))
-        pat_lm <- summary(lm(pheno ~ pat_df[,threshold]+C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20+AGE, data=pat_df))
-        pat_subres <- c(pat_glm$coefficients[2,], pat_glm$df[2]+23, pat_lm$adj.r.squared, 'pat', pheno_prefix, names(pat_df)[threshold], prs_prefix)
-        pat_res <- rbind(pat_res, pat_subres)
-        
-        results <- Reduce(function(x,y) rbind(x=x, y=y), list(all_res, off_res, mat_res, pat_res))
-      }
-      
-      sc1_results <- rbind(sc1_results, results)
-    
-    } else {
-
-      # for continuous traits we need to run lm() models 
-      for(threshold in 3:13){
-        all_lm <- summary(lm(pheno ~ all_df[,threshold]+C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20+AGE+SEX, data=all_df))
-        all_subres <- c(all_lm$coefficients[2,], all_lm$df[2]+23, all_lm$adj.r.squared, 'all', pheno_prefix, names(all_df)[threshold], prs_prefix)
-        all_res <- rbind(all_res, all_subres)
-        
-        off_lm <- summary(lm(pheno ~ off_df[,threshold]+C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20+AGE+SEX, data=off_df))
-        off_subres <- c(off_lm$coefficients[2,], off_lm$df[2]+23, off_lm$adj.r.squared, 'off', pheno_prefix, names(off_df)[threshold], prs_prefix)
-        off_res <- rbind(off_res, off_subres)
-      
-        mat_lm <- summary(lm(pheno ~ mat_df[,threshold]+C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20+AGE, data=mat_df))
-        mat_subres <- c(mat_lm$coefficients[2,], mat_lm$df[2]+23, mat_lm$adj.r.squared, 'mat', pheno_prefix, names(mat_df)[threshold], prs_prefix)
-        mat_res <- rbind(mat_res, mat_subres)
-        
-        pat_lm <- summary(lm(pheno ~ pat_df[,threshold]+C1+C2+C3+C4+C5+C6+C7+C8+C9+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20+AGE, data=pat_df))
-        pat_subres <- c(pat_lm$coefficients[2,], pat_lm$df[2]+23, pat_lm$adj.r.squared, 'pat', pheno_prefix, names(pat_df)[threshold], prs_prefix)
-        pat_res <- rbind(pat_res, pat_subres)
-        
-        results <- Reduce(function(x,y) rbind(x=x, y=y), list(all_res, off_res, mat_res, pat_res))
-      }
-      
-      sc1_results <- rbind(sc1_results, results)
-    }
-  }
+  sd_predictor <- sd(phenos_prs[,prs_predictor], na.rm=T)
+  sd_outcome <- sd(phenos_prs[,pheno], na.rm=T)
+  
+  b_std <- b * sd_predictor / sd_outcome
+  se_std <- se * sd_predictor / sd_outcome
+  
+  pheno_prs_checks[i,"beta"] <- b_std
+  pheno_prs_checks[i,"se"] <- se_std
+  
 }
-colnames(sc1_results)[5:10] <- c('n', 'adjR2', 'sample', 'trait', 'prs_threshold', 'trait')
-sc1_results <- sc1_results[!duplicated(sc1_results),]
-write.csv(sc1_results, "PRS_pheno_associations.csv", row.names=F, quote=F)
+
+ggplot(pheno_prs_checks, aes(x = method, y = beta, ymin = beta + qnorm(0.025, sd=se), ymax = beta + qnorm(0.975, sd=se))) + geom_pointrange() + facet_grid(~pheno) + coord_flip()
+
   
 ```
 
 **2. Are the trio PGS_pcs and phenotypes correlated in the way we would expect?**  
 
-```{r, eval=FALSE}
+```{r trio_prs, cache = TRUE}
 
 # TRIO PGS correlations
 
-pgs_cor <- c()
+trio_prs <- merge(trio, PRS, by="IID", all.x=T)
+trio_prs <- merge(trio_prs, PRS, by.x = "MID", by.y = "IID", suffixes = c('', '_mat'))
+trio_prs <- merge(trio_prs, PRS, by.x = "PID", by.y = "IID", suffixes = c('', '_pat'))
 
-for(prs_prefix in c('h', 'ea', 'dep')){
-  prs <- read.table(paste0(prs_prefix, '_allPRS'), header=T)
-  prs <- prs[,c(2,13)]
+
+prs_mpo_cor <- data.frame(pheno = rep(names(phenos_prs_map), times = length(prs_methods)),
+                               method = rep(prs_methods, each = length(names(phenos_prs_map))),
+                               rMO = NA, rPO = NA, rMP = NA,
+                               rMOlower = NA, rPOlower = NA, rMPlower = NA,
+                               rMOupper = NA, rPOupper = NA, rMPupper = NA)
+                               
+for(i in seq.int(nrow(pheno_prs_checks))) {
+  pheno <- pheno_prs_checks[i,"pheno"]
+  method <- pheno_prs_checks[i,"method"]
+
+  prs_predictor <- paste0(phenos_prs_map[[pheno]], "_", method)
+  prs_predictor_m <- paste0(prs_predictor, "_mat")
+  prs_predictor_p <- paste0(prs_predictor, "_pat")
   
-  df <- merge(GStrio, prs, by='IID', all.x=T)
-  colnames(prs) <- c('MID', 'mPRS_pc')
-  df2 <- merge(df, prs, by='MID', all.x=T)
-  colnames(prs) <- c('PID', 'pPRS_pc')
-  df3 <- merge(df2, prs, by='PID', all.x=T)
+  rMO <- cor.test(trio_prs[,prs_predictor], trio_prs[,prs_predictor_m])
+  rPO <- cor.test(trio_prs[,prs_predictor], trio_prs[,prs_predictor_p])
+  rMP <- cor.test(trio_prs[,prs_predictor_m], trio_prs[,prs_predictor_p])
+   
+  prs_mpo_cor[i,"rMO"] <- rMO$estimate[['cor']]
+  prs_mpo_cor[i,"rPO"] <- rPO$estimate[['cor']]
+  prs_mpo_cor[i,"rMP"] <- rMP$estimate[['cor']]
+   
+  prs_mpo_cor[i,"rMOlower"] <- rMO$conf.int[1]
+  prs_mpo_cor[i,"rPOlower"] <- rPO$conf.int[1]
+  prs_mpo_cor[i,"rMPlower"] <- rMP$conf.int[1] 
   
-  o_m <- cor.test(df3$PRS_pc, df3$mPRS_pc)
-  o_p <- cor.test(df3$PRS_pc, df3$pPRS_pc)
-  m_p <- cor.test(df3$mPRS_pc, df3$pPRS_pc)
-  
-  for(cor in c('o_m', 'o_p', 'm_p')){
-    test <- get(cor)
-    test_info <- Reduce(function(x,y) cbind(x=x,y=y), list(cor, test$estimate, test$conf.int[1], test$conf.int[2], test$parameter, test$p.value, prs_prefix))
-    colnames(test_info) <- c('combo', 'r', 'lci', 'uci', 'df', 'pval', 'prs')
-    pgs_cor <- rbind(pgs_cor, test_info)
-  }
+  prs_mpo_cor[i,"rMOupper"] <- rMO$conf.int[2]
+  prs_mpo_cor[i,"rPOupper"] <- rPO$conf.int[2]
+  prs_mpo_cor[i,"rMPupper"] <- rMP$conf.int[2] 
 }
-write.csv(pgs_cor, "trio_prspc_cor.csv", row.names=F, quote=F)
 
-# TRIO Pheno correlations  (!!!!!!!!!!!!!)
-pheno_cor <- c()
+# reshape
+prs_mo_cor <- prs_mpo_cor[,c("pheno", "method", "rMO", "rMOlower", "rMOupper")]
+prs_mo_cor$est <- "rMO"
+prs_po_cor <- prs_mpo_cor[,c("pheno", "method", "rPO", "rPOlower", "rPOupper")]
+prs_po_cor$est <- "rPO"
+prs_mp_cor <- prs_mpo_cor[,c("pheno", "method", "rMP", "rMPlower", "rMPupper")]
+prs_mp_cor$est <- "rMP"
 
-for(pheno_prefix in c('HEIGHT', 'EA', 'GHQTotal', 'GHQDepression')){
-  pheno <- read.table(paste0(pheno_prefix, '_outliers_removed'), header=T)
-  
-  if(pheno_prefix=='HEIGHT' | pheno_prefix=='EA'){
-    pheno <- pheno[,-1] # remove FID column
-  }
-  
-  df <- merge(GStrio, pheno, by='IID', all.x=T)
-  colnames(pheno) <- c('MID', paste0('m_', pheno_prefix))
-  df2 <- merge(df, pheno, by='MID', all.x=T)
-  colnames(pheno) <- c('PID', paste0('p_', pheno_prefix))
-  df3 <- merge(df2, pheno, by='PID', all.x=T)
-  
-  o_m <- cor.test(df3[,7], df3[,8])
-  o_p <- cor.test(df3[,7], df3[,9])
-  m_p <- cor.test(df3[,8], df3[,9])  
-  
-  for(cor in c('o_m', 'o_p', 'm_p')){
-    test <- get(cor)
-    test_info <- Reduce(function(x,y) cbind(x=x,y=y), list(cor, test$estimate, test$conf.int[1], test$conf.int[2], test$parameter, test$p.value, pheno_prefix))
-    colnames(test_info) <- c('combo', 'r', 'lci', 'uci', 'df', 'pval', 'pheno')
-    pheno_cor <- rbind(pheno_cor, test_info)
-  }
-}
-write.csv(pheno_cor, "trio_pheno_cor.csv", row.names=F, quote=F)
+names(prs_mo_cor)[3:5] <- names(prs_po_cor)[3:5] <- names(prs_mp_cor)[3:5] <- c("r", "r_upper", "r_lower")
+prs_mp_cor_long <- rbind(prs_mo_cor, prs_po_cor, prs_mp_cor)
+
+ggplot(prs_mp_cor_long, aes(x = method, y = r, ymin = r_lower, ymax = r_upper, color = est)) +
+  geom_hline(yintercept = 0, colour = 'darkgray') +
+  geom_hline(yintercept = 0.5, colour = 'darkgray') +
+  geom_pointrange(position = position_dodge(width=0.3)) + 
+  facet_grid(~pheno) + 
+  coord_flip()
 
 ```
 
 # Analysis Dataframe  
 
-PRS are scaled to have a mean of 0 and sd of 1.  
+PRS are scaled to the 1000G EUR reference group..  
 All variables are pre-corrected for covariates, 20 offspring PCs, 20 maternal and paternal PCs, parental age, offspring age, offspring sex. 
-
-```{r, eval=FALSE}
-
-rm(list=ls())
-
-#####################
-# read in trio data #
-#####################
-
-fam <- read.table("GS_QC.fam") #this file was renamed for convenience 
-fam <- fam[,2:4] 
-colnames(fam) <- c("IID", "PID", "MID")
-
-offid <- as.data.frame(fam$IID)
-colnames(offid) <- 'IID'
-matid <- as.data.frame(unique(fam$MID))
-colnames(matid) <- 'IID'
-patid <- as.data.frame(unique(fam$PID))
-colnames(patid) <- 'IID'
-
-##########################
-# read in covariate data #
-##########################
-
-cov <- read.table("GScov", header=T)
-cov <- cov[,-1] # removing FID column  
-cov$SEX <- as.factor(cov$SEX)
-
-ocov <- merge(offid, cov, by='IID', all.x=T)
-mcov <- merge(matid, cov, by='IID', all.x=T)
-colnames(mcov)[1] <- 'MID'
-mcov <- mcov[!duplicated(mcov),]
-pcov <- merge(patid, cov, by='IID', all.x=T)
-colnames(pcov)[1] <- 'PID'
-pcov <- pcov[!duplicated(pcov),]
-
-for(col in 2:23){
-  colnames(ocov)[col] <- paste0('o', names(ocov)[col])
-  colnames(mcov)[col] <- paste0('m', names(mcov)[col])
-  colnames(pcov)[col] <- paste0('p', names(pcov)[col])
-}
-
-allcov <- merge(fam, ocov, by='IID')
-allcov <- merge(allcov, mcov, by='MID', all.x=TRUE)
-allcov <- merge(allcov, pcov, by='PID', all.x=TRUE)
-
-triocov <- allcov[complete.cases(allcov),]
-
-###################################################
-# read in phenotypes & regress out all covariates # 
-###################################################
-
-for(pheno_prefix in c('HEIGHT', 'EA', 'GHQTotal', 'GHQDepression')){
-  pheno <- read.table(paste0(pheno_prefix, '_outliers_removed'), header=T)
-  
-  if(pheno_prefix=='HEIGHT' | pheno_prefix=='EA'){
-    pheno <- pheno[,-1] #removing FID column
-  }
-  
-  colnames(pheno)[2] <- 'pheno'
-  
-  odf <- merge(pheno, triocov, by='IID')
-  odf <- odf[,-c(28, 50)] # removing IIDs, and parental sex variables
-  colnames(pheno)[1] <- 'MID'
-  mdf <- merge(pheno, triocov, by='MID')
-  mdf <- mdf[,-c(28, 50)]
-  colnames(pheno)[1] <- 'PID'
-  pdf <- merge(pheno, triocov, by='PID')
-  pdf <- pdf[,-c(28, 50)]
-    
-  # offspring pheno
-  oreg <- summary(lm(pheno ~ ., data = odf[-c(1,3:4)]))
-  oPheno <- cbind(odf$IID, oreg$residuals)
-  colnames(oPheno) <- c('IID', paste0(pheno_prefix, '_res'))
-    
-  # maternal pheno
-  mreg <- summary(lm(pheno ~ ., data = mdf[-c(1,3:4)]))
-  mPheno <- cbind(mdf$MID, mreg$residuals)
-  colnames(mPheno) <- c('MID', paste0('m_', pheno_prefix, '_res'))
-    
-  # paternal pheno
-  preg <- summary(lm(pheno ~ ., data = pdf[-c(1,3:4)]))
-  pPheno <- cbind(pdf$PID, preg$residuals)
-  colnames(pPheno) <- c('PID', paste0('p_', pheno_prefix, '_res'))
-    
-  write.csv(oPheno, paste0('o_', pheno_prefix, '_residualised'), row.names=F, quote=F)
-  write.csv(mPheno, paste0('m_', pheno_prefix, '_residualised'), row.names=F, quote=F)
-  write.csv(pPheno, paste0('p_', pheno_prefix, '_residualised'), row.names=F, quote=F)
-}
-
-#####################################################
-# read in prs values and regress out all covariates #  
-#####################################################
-
-for(prs_prefix in c('h', 'ea', 'dep')){
-  prs <- read.table(paste0(prs_prefix, '_allPRS'), header=T)
-  prs <- prs[,c(2,13)] # using PRSpc
-  prs$PRS_pc <- scale(prs$PRS_pc, center=TRUE, scale=TRUE)
-  
-  odf <- merge(prs, triocov, by='IID')
-  odf <- odf[,-c(28, 50)] # removing IIDs, and parental sex variables
-  colnames(prs)[1] <- 'MID'
-  mdf <- merge(prs, triocov, by='MID')
-  mdf <- mdf[,-c(28, 50)]
-  colnames(prs)[1] <- 'PID'
-  pdf <- merge(prs, triocov, by='PID')
-  pdf <- pdf[,-c(28, 50)]
-  
-  # offspring prs
-  oreg <- summary(lm(PRS_pc ~ ., data = odf[-c(1,3:4)]))
-  oPRS <- cbind(odf$IID, oreg$residuals)
-  colnames(oPRS) <- c('IID', paste0(prs_prefix, '_PRSres'))
-    
-  # maternal prs
-  mreg <- summary(lm(PRS_pc ~ ., data = mdf[-c(1,3:4)]))
-  mPRS <- cbind(mdf$MID, mreg$residuals)
-  colnames(mPRS) <- c('MID', paste0('m_', prs_prefix, '_PRSres'))
-    
-  # paternal prs
-  preg <- summary(lm(PRS_pc ~ ., data = pdf[-c(1,3:4)]))
-  pPRS <- cbind(pdf$PID, preg$residuals)
-  colnames(pPRS) <- c('PID', paste0('p_', prs_prefix, '_PRSres'))
-    
-  write.csv(oPRS, paste0('o_', prs_prefix, 'PRS_residualised'), row.names=F, quote=F)
-  write.csv(mPRS, paste0('m_', prs_prefix, 'PRS_residualised'), row.names=F, quote=F)
-  write.csv(pPRS, paste0('p_', prs_prefix, 'PRS_residualised'), row.names=F, quote=F)
-}
-
-#######################################
-# create dataframe for each phenotype #
-#######################################
-
-GStrio <- read.table("GS_trio", header=T)
-GSsex <- GStrio[,c(2,5)]
-GStrio <- GStrio[,c(1:4)]
-
-analysis_df <- GStrio
-
-for(pheno_prefix in c('HEIGHT', 'EA', 'GHQTotal', 'GHQDepression')){
-  
-  if(pheno_prefix=='HEIGHT'){
-    prs_prefix <- 'h'
-  } else if (pheno_prefix=='EA'){
-    prs_prefix <- 'ea'
-  } else {
-    prs_prefix <- 'dep'
-  }
-  
-  # read in phenotypes  
-  oPheno <- read.csv(paste0('o_', pheno_prefix, '_residualised'), header=T)
-  mPheno <- read.csv(paste0('m_', pheno_prefix, '_residualised'), header=T)
-  mPheno <- mPheno[!duplicated(mPheno[,1]),]
-  pPheno <- read.csv(paste0('p_', pheno_prefix, '_residualised'), header=T)
-  pPheno <- pPheno[!duplicated(pPheno[,1]),]
-
-  # read in PRS  
-  oPRS <- read.csv(paste0('o_', prs_prefix, 'PRS_residualised'), header=T)
-  mPRS <- read.csv(paste0('m_', prs_prefix, 'PRS_residualised'), header=T)
-  mPRS <- mPRS[!duplicated(mPRS[,1]),]
-  pPRS <- read.csv(paste0('p_', prs_prefix, 'PRS_residualised'), header=T)
-  pPRS <- pPRS[!duplicated(pPRS[,1]),]
-  
-  # create dataframe 
-  if(pheno_prefix=='GHQTotal'){
-    df <- Reduce(function(x,y) merge(x=x,y=y, by='IID', all.x=T, all.y=T), list(GStrio, oPheno))
-    df <- Reduce(function(x,y) merge(x=x,y=y, by='MID', all.x=T, all.y=T), list(df, mPheno))
-    df <- Reduce(function(x,y) merge(x=x,y=y, by='PID', all.x=T, all.y=T), list(df, pPheno))
-  } else {
-    df <- Reduce(function(x,y) merge(x=x,y=y, by='IID', all.x=T, all.y=T), list(GStrio, oPheno, oPRS))
-    df <- Reduce(function(x,y) merge(x=x,y=y, by='MID', all.x=T, all.y=T), list(df, mPheno, mPRS))
-    df <- Reduce(function(x,y) merge(x=x,y=y, by='PID', all.x=T, all.y=T), list(df, pPheno, pPRS))
-  }
-  
-  analysis_df <- merge(analysis_df, df, by=c('FID', 'IID', 'MID', 'PID'), all.x=TRUE)
-
-}
-analysis_df <- merge(analysis_df, GSsex, by='IID', all.x=TRUE)
-
-write.table(analysis_df, 'IGE_analysis_df', row.names=F, quote=F)
-
-```
 
 # Regression Analyses  
 
 *I*. oPheno ~ oPRS *This model captures direct GE*  
-*II*. oPheno ~ oPRS + mPRS + pPRS *This model captures both direct and indirect GE*  
-  
-*I*. oPheno ~ oPRS + mPheno + pPheno  
-*II*. oPheno ~ oPRS + mPheno + pPheno+ mPRS + pPRS  
+*II*. oPheno ~ oPRS + mPRS + pPRS *This model captures both direct and indirect GE*   
+*III*. oPheno ~ oPRS + mPheno + pPheno  
+*IV*. oPheno ~ oPRS + mPheno + pPheno+ mPRS + pPRS  
 
 *We are not interpreting beta estimates as these are likely to be biased/inaccurate as variables in the models are correlated!*
 Comparison of the models using log likelihood can help us infer whether the effects of indirect genetic effects are present (specifically comparison of model *I* and *II*)  
 
-```{r, eval=FALSE}
-rm(list=ls())
-
+```{r reg_models, eval=FALSE}
 library(lmerTest) #this package allows us to run regression models with fixed and random effects
 library(MuMIn) #this package allows us to obtain the R2 of our models, R2m (Marginal) R2 > fixed effects, R2c (Conditional) > whole model
 library(dplyr)
+
+trio_phenos <- merge(trio_height, trio_ea, by = c("IID", "MID", "PID", "FID", "SEX", "PHENO"))
+trio_phenos <- merge(trio_phenos, trio_ghqd, by = c("IID", "MID", "PID", "FID", "SEX", "PHENO"))
+
+trio_phenos_prs <- merge(trio_phenos, trio_prs, by = c("IID", "MID", "PID", "FID", "SEX", "PHENO"))
+trio_phenos_prs$sibID <- with(trio_phenos_prs, paste(MID, PID, sep = "_"))
+
+trio_phenos_prs_complete <- trio_phenos_prs[complete.cases(trio_phenos_prs),]
+
+phenos_prs_params <- list()
+
+for(pheno in c("HEIGHT", "EA", "GHQD")) {
+  for(method in c("SBayesR", "unweighted_0_1e.04")) {
+    oPheno <- paste0(pheno, "_res")
+    oPRS <- paste0(phenos_prs_map[[pheno]], '_', method)
+    params <- list(pheno = pheno, method = method,
+         oPheno = oPheno,
+         mPheno = paste0(oPheno, '_mat'),
+         pPheno = paste0(oPheno, '_pat'),
+         oPRS = oPRS,
+         mPRS = paste0(oPRS, '_mat'),
+         pPRS = paste0(oPRS, '_pat'))
+         
+    phenos_prs_params <- c(phenos_prs_params, list(params))
+    }
+}
+
+params_model1_formulae <- lapply(phenos_prs_params, function(params) {
+  params$model <- 'model1'
+  params$formula <- as.formula(paste(params$oPheno, ' ~ ', params$oPRS, '+ (1|sibID)'))
+  return(params)
+})
+
+params_model2_formulae <- lapply(params_model1_formulae, function(params) {
+  params$model <- 'model2'
+  params$formula <- update(params$formula, as.formula(paste('. ~ . + ', params$mPRS, ' + ', params$pPRS)))
+  return(params)
+})
+
+params_model3_formulae <- lapply(params_model1_formulae, function(params) {
+  params$model <- 'model3'
+  params$formula <- update(params$formula, as.formula(paste('. ~ . + ', params$mPheno, ' + ', params$pPheno)))
+  return(params)
+})
+
+params_model4_formulae <- lapply(params_model2_formulae, function(params) {
+  params$model <- 'model4'
+  params$formula <- update(params$formula, as.formula(paste('. ~ . + ', params$mPheno, ' + ', params$pPheno)))
+  return(params)
+})
+
+params_model_formulae <- c(params_model1_formulae, params_model2_formulae, params_model3_formulae, params_model4_formulae)
+
+
+```
+
+
+```{r, eval = FALSE}
+
+=======
 
 df <- read.table("IGE_analysis_df", header=T)
 df$sibID <- paste0(df$MID, '_', df$PID)
