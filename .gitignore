@@ -1,0 +1,7 @@
+data/
+vendor/
+pgs/venv
+*.gz
+*.pheno
+*.meta
+*.log
